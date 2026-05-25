@@ -1614,7 +1614,7 @@ async def telegram_webhook(request: Request):
 
 # ===================== BOT MAIN =====================
 
-WEBHOOK_URL = "https://tg-bot2026-1.onrender.com/webhook"
+WEBHOOK_URL = "https://tg2026newbot.onrender.com/webhook"
 
 async def run_bot():
     global bot_app_global
