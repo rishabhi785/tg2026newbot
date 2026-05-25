@@ -289,15 +289,30 @@ async def send_join_message(update, user_id: int, bot=None):
     if row:
         keyboard.append(row)
     keyboard.append([InlineKeyboardButton("✅ I Have Joined All Channels", callback_data="check_join")])
+
+    # Get username of the user
+    user_obj = None
+    if hasattr(update, 'effective_user') and update.effective_user:
+        user_obj = update.effective_user
+    elif hasattr(update, 'message') and update.message and update.message.from_user:
+        user_obj = update.message.from_user
+
+    username_line = ""
+    if user_obj:
+        if user_obj.username:
+            username_line = f"\n👤 @{user_obj.username}"
+        else:
+            username_line = f"\n👤 {user_obj.first_name}"
+
     text = (
-        "🔒 *PLEASE FIRST JOIN CHANNELS*\n\n"
-        "You must join our channels to use this bot.\n\n"
-        "👇 Join all channels below, then click the button:"
+        f"👑 Hey There! Welcome To Bot !!{username_line}\n\n"
+        "⚪️ Join The Channels Below To Continue\n\n"
+        "😍 After Joining Click Claim"
     )
     if hasattr(update, 'message') and update.message:
-        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
     elif hasattr(update, 'edit_message_text'):
-        await update.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        await update.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
 def get_user_keyboard(user_id: int):
@@ -384,9 +399,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         keyboard = [[InlineKeyboardButton("🔐 Verify Device", web_app=WebAppInfo(url=WEBAPP_URL))]]
         await update.message.reply_text(
-            "🔒 *DEVICE VERIFICATION REQUIRED*\n\n"
-            "Please verify your device to start using the bot.\n\n"
-            "Tap the button below to verify:",
+            "✨Verify your device",
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode="Markdown"
         )
@@ -511,7 +524,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if is_verified != 1:
             keyboard = [[InlineKeyboardButton("🔐 Verify Device", web_app=WebAppInfo(url=WEBAPP_URL))]]
             await update.message.reply_text(
-                "🔒 *DEVICE VERIFICATION REQUIRED*\n\nPlease verify your device first.",
+                "✨Verify your device",
                 reply_markup=InlineKeyboardMarkup(keyboard),
                 parse_mode="Markdown"
             )
@@ -813,11 +826,11 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE, 
             return
         msg = "📋 *PENDING WITHDRAWAL REQUESTS*\n\n"
         for r in rows:
-            msg += f"🆔 ID: {r[0]} | 👤 User: {r[1]} | 💰 Rs.{r[2]} | {r[3].upper()}\n"
+            msg += f"🆔 ID: `{r[0]}` | 👤 User: `{r[1]}` | 💰 `Rs.{r[2]}` | {r[3].upper()}\n"
             if r[3] == 'upi':
-                msg += f"🏦 UPI: {r[4]}\n"
+                msg += f"🏦 UPI: `{r[4]}`\n"
             else:
-                msg += f"💳 VSV: {r[5]}\n"
+                msg += f"💳 VSV: `{r[5]}`\n"
             msg += f"📅 Date: {r[6][:10]}\n\n"
         await update.message.reply_text(msg, parse_mode="Markdown", reply_markup=get_admin_keyboard())
 
@@ -1325,6 +1338,19 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "check_join":
         await check_join_callback(update, context)
 
+    # ---- COPY BUTTONS (Admin withdrawal requests) ----
+    elif data.startswith("copy_uid_"):
+        value = data[len("copy_uid_"):]
+        await query.answer(f"User ID: {value}", show_alert=True)
+
+    elif data.startswith("copy_pay_"):
+        value = data[len("copy_pay_"):]
+        await query.answer(f"{value}", show_alert=True)
+
+    elif data.startswith("copy_amt_"):
+        value = data[len("copy_amt_"):]
+        await query.answer(f"Amount: Rs.{value}", show_alert=True)
+
     # ---- REFER & EARN inline buttons ----
     elif data.startswith("refer_invites_"):
         target_uid = int(data.split("_")[-1])
@@ -1380,11 +1406,8 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await db.execute("UPDATE user_balance SET balance=?, last_bonus_claim=? WHERE user_id=?", (new_balance, now, target_uid))
             await db.commit()
         await query.message.reply_text(
-            f"🎁 *DAILY BONUS CLAIMED!*\n\n"
-            f"💰 +RS.1.00 ADDED!\n"
-            f"💵 NEW BALANCE: RS.{new_balance:.2f}\n\n"
-            f"Come back tomorrow for more! 🚀",
-            parse_mode="Markdown"
+            f"🎁 DAILY BONUS CLAIMED +RS.1.00\n\n"
+            f"💵 NEW BALANCE: RS.{new_balance:.2f}",
         )
 
     elif data.startswith("bonus_gift_"):
