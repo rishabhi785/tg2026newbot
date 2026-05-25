@@ -367,7 +367,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await db.commit()
 
         row = await (await db.execute("SELECT is_verified FROM users WHERE user_id = ?", (user.id,))).fetchone()
-        is_verified = row[0] if row else 0
+        is_verified = int(row[0]) if row and row[0] is not None else 0
 
     # ADMIN BYPASS - Admin always gets main menu directly
     if user.id == ADMIN_ID:
@@ -379,7 +379,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await send_join_message(update, user.id)
         return
 
-    if is_verified:
+    if is_verified == 1:
         await send_main_menu(update, user.first_name, user.id)
     else:
         keyboard = [[InlineKeyboardButton("🔐 Verify Device", web_app=WebAppInfo(url=WEBAPP_URL))]]
@@ -404,9 +404,9 @@ async def check_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     async with turso_connect() as db:
         row = await (await db.execute("SELECT is_verified FROM users WHERE user_id = ?", (user.id,))).fetchone()
-        is_verified = row[0] if row else 0
+        is_verified = int(row[0]) if row and row[0] is not None else 0
 
-    if is_verified:
+    if is_verified == 1:
         await query.edit_message_text("✅ All channels joined!")
         await query.message.reply_text(
             f"🏡 *Welcome To UPI Giveaway Bot!*\n\n"
@@ -506,9 +506,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_id != ADMIN_ID:
         async with turso_connect() as db:
             row = await (await db.execute("SELECT is_verified FROM users WHERE user_id = ?", (user_id,))).fetchone()
-            is_verified = row[0] if row else 0
+            is_verified = int(row[0]) if row and row[0] is not None else 0
 
-        if not is_verified:
+        if is_verified != 1:
             keyboard = [[InlineKeyboardButton("🔐 Verify Device", web_app=WebAppInfo(url=WEBAPP_URL))]]
             await update.message.reply_text(
                 "🔒 *DEVICE VERIFICATION REQUIRED*\n\nPlease verify your device first.",
