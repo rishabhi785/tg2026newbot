@@ -1197,12 +1197,12 @@ async def handle_leaderboard(update):
 async def handle_redeem_code_menu(update, user_id, context):
     keyboard = [
         [InlineKeyboardButton("🛒 Buy Redeem Code", callback_data="redeem_buy")],
-        [InlineKeyboardButton("🎟️ Use Redeem Code", callback_data="redeem_use")],
+        [InlineKeyboardButton("🎁 Use Gift Code", callback_data="redeem_use")],
     ]
     await update.message.reply_text(
-        "🎟️ *REDEEM CODE*\n\n"
+        "✨ *REDEEM CODE*\n\n"
         "🛒 *Buy A Redeem Code* — Purchase a code (min Rs.10) and receive it on your email.\n\n"
-        "🎟️ *Use A Redeem Code* — Enter an existing code to add balance.",
+        "🎁*Use A Gift Code* — Enter an existing code to add balance.",
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode="Markdown"
     )
@@ -1404,7 +1404,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "redeem_use":
         context.user_data['waiting_for'] = 'redeem_use'
         await query.message.reply_text(
-            "🎟️ *USE REDEEM CODE*\n\nSend Your Redeem Code:",
+            "🎁 *USE Gift CODE*\n\nSend Your Redeem Code:",
             parse_mode="Markdown"
         )
     elif data.startswith("wd_upi_"):
