@@ -288,7 +288,7 @@ async def send_join_message(update, user_id: int, bot=None):
             row = []
     if row:
         keyboard.append(row)
-    keyboard.append([InlineKeyboardButton("CLAIM 🔒", callback_data="check_join")])
+    keyboard.append([InlineKeyboardButton("✅ I Have Joined All Channels", callback_data="check_join")])
     text = (
         "🔒 *PLEASE FIRST JOIN CHANNELS*\n\n"
         "You must join our channels to use this bot.\n\n"
@@ -319,6 +319,7 @@ def get_admin_keyboard():
         [KeyboardButton("Update Channel"), KeyboardButton("Broadcast Message")],
         [KeyboardButton("Set Refer Reward"), KeyboardButton("Set Min Withdrawal")],
         [KeyboardButton("Set Welcome Bonus"), KeyboardButton("Withdraw ON/OFF")],
+        [KeyboardButton("UPI Withdraw ON/OFF"), KeyboardButton("VSV Withdraw ON/OFF")],
         [KeyboardButton("Manual Balance"), KeyboardButton("Approve Withdrawal")],
         [KeyboardButton("Reject Withdrawal"), KeyboardButton("Create Gift Code")],
         [KeyboardButton("Back To Menu")],
@@ -463,8 +464,8 @@ async def combined_message_handler(update: Update, context: ContextTypes.DEFAULT
     admin_buttons = [
         "Total Users", "Withdrawal Requests", "Add Channel", "Remove Channel",
         "Update Channel", "Broadcast Message", "Set Refer Reward", "Set Min Withdrawal",
-        "Set Welcome Bonus", "Withdraw ON/OFF", "Manual Balance", "Approve Withdrawal",
-        "Reject Withdrawal", "Create Gift Code", "Back To Menu"
+        "Set Welcome Bonus", "Withdraw ON/OFF", "UPI Withdraw ON/OFF", "VSV Withdraw ON/OFF",
+        "Manual Balance", "Approve Withdrawal", "Reject Withdrawal", "Create Gift Code", "Back To Menu"
     ]
 
     if user_id == ADMIN_ID:
@@ -940,6 +941,26 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE, 
             parse_mode=None
         )
 
+    elif text == "UPI Withdraw ON/OFF":
+        current = await get_setting("upi_withdrawal_enabled", "1")
+        new_val = "0" if current == "1" else "1"
+        await set_setting("upi_withdrawal_enabled", new_val)
+        status = "ENABLED" if new_val == "1" else "DISABLED"
+        await update.message.reply_text(
+            f"UPI Withdrawal Is Now: {status}",
+            reply_markup=get_admin_keyboard()
+        )
+
+    elif text == "VSV Withdraw ON/OFF":
+        current = await get_setting("vsv_withdrawal_enabled", "1")
+        new_val = "0" if current == "1" else "1"
+        await set_setting("vsv_withdrawal_enabled", new_val)
+        status = "ENABLED" if new_val == "1" else "DISABLED"
+        await update.message.reply_text(
+            f"VSV Withdrawal Is Now: {status}",
+            reply_markup=get_admin_keyboard()
+        )
+
     elif text == "Back To Menu":
         context.user_data.clear()
         await send_main_menu(update, update.effective_user.first_name, user_id)
@@ -969,10 +990,9 @@ async def handle_refer_earn(update, user_id, context):
 
     keyboard = [
         [
-            InlineKeyboardButton("MY INVITES", callback_data=f"refer_invites_{user_id}"),
-            InlineKeyboardButton("LEADERBOARD", callback_data="refer_leaderboard"),
+            InlineKeyboardButton("🎀 MY INVITES", callback_data=f"refer_invites_{user_id}"),
+            InlineKeyboardButton("🏆 LEADERBOARD", callback_data="refer_leaderboard"),
         ],
-        [InlineKeyboardButton("REFER TRACKER", callback_data=f"refer_tracker_{user_id}")],
     ]
 
     await update.message.reply_text(
@@ -1034,10 +1054,20 @@ async def handle_withdraw(update, user_id, context):
     context.user_data['withdraw_upi'] = upi_id
     context.user_data['withdraw_vsv'] = vsv_wallet
 
-    keyboard = [
-        [InlineKeyboardButton("✅ VSV CLICK", callback_data=f"wd_vsv_{user_id}")],
-        [InlineKeyboardButton("✅ UPI CLICK", callback_data=f"wd_upi_{user_id}")],
-    ]
+    upi_enabled = await get_setting("upi_withdrawal_enabled", "1")
+    vsv_enabled = await get_setting("vsv_withdrawal_enabled", "1")
+
+    keyboard = []
+    if vsv_wallet and vsv_enabled == "1":
+        keyboard.append([InlineKeyboardButton("✅ VSV CLICK", callback_data=f"wd_vsv_{user_id}")])
+    if upi_id and upi_enabled == "1":
+        keyboard.append([InlineKeyboardButton("✅ UPI CLICK", callback_data=f"wd_upi_{user_id}")])
+
+    if not keyboard:
+        await update.message.reply_text(
+            "🔒 Withdrawals are currently disabled by admin. Please try again later.",
+        )
+        return
 
     await update.message.reply_text(
         "✨ SELECT PAYMENT METHOD FOR WITHDRAWAL",
@@ -1125,10 +1155,10 @@ async def handle_withdraw_amount(update, user_id, context, text):
             await db.commit()
         try:
             admin_msg = (
-                f"💸 *NEW UPI WITHDRAWAL REQUEST!*\n\n"
-                f"👤 User ID: {user_id}\n"
-                f"💰 Amount: Rs.{amount:.2f}\n"
-                f"🏦 UPI: {upi_id}"
+                f"💸 NEW UPI WITHDRAWAL REQUEST!\n\n"
+                f"User ID:\n`{user_id}`\n\n"
+                f"Amount:\n`Rs.{amount:.2f}`\n\n"
+                f"UPI ID:\n`{upi_id}`"
             )
             await update.get_bot().send_message(chat_id=ADMIN_ID, text=admin_msg, parse_mode="Markdown")
         except:
@@ -1197,12 +1227,12 @@ async def handle_leaderboard(update):
 async def handle_redeem_code_menu(update, user_id, context):
     keyboard = [
         [InlineKeyboardButton("🛒 Buy Redeem Code", callback_data="redeem_buy")],
-        [InlineKeyboardButton("🎁 Use Gift Code", callback_data="redeem_use")],
+        [InlineKeyboardButton("🎟️ Use Redeem Code", callback_data="redeem_use")],
     ]
     await update.message.reply_text(
-        "✨ *REDEEM CODE*\n\n"
+        "🎟️ *REDEEM CODE*\n\n"
         "🛒 *Buy A Redeem Code* — Purchase a code (min Rs.10) and receive it on your email.\n\n"
-        "🎁*Use A Gift Code* — Enter an existing code to add balance.",
+        "🎟️ *Use A Redeem Code* — Enter an existing code to add balance.",
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode="Markdown"
     )
@@ -1404,7 +1434,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "redeem_use":
         context.user_data['waiting_for'] = 'redeem_use'
         await query.message.reply_text(
-            "🎁 *USE Gift CODE*\n\nSend Your Redeem Code:",
+            "🎟️ *USE REDEEM CODE*\n\nSend Your Redeem Code:",
             parse_mode="Markdown"
         )
     elif data.startswith("wd_upi_"):
