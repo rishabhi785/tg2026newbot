@@ -1209,13 +1209,13 @@ async def handle_leaderboard(update):
 
 async def handle_redeem_code_menu(update, user_id, context):
     keyboard = [
-        [InlineKeyboardButton("🛒 Buy Redeem Code", callback_data="redeem_buy")],
-        [InlineKeyboardButton("🎟️ Use Redeem Code", callback_data="redeem_use")],
+        [InlineKeyboardButton("🌟 Buy Redeem Code", callback_data="redeem_buy")],
+        [InlineKeyboardButton("🎁 Use Gift Code", callback_data="redeem_use")],
     ]
     await update.message.reply_text(
-        "🎟️ *REDEEM CODE*\n\n"
-        "🛒 *Buy A Redeem Code* — Purchase a code (min Rs.10) and receive it on your email.\n\n"
-        "🎟️ *Use A Redeem Code* — Enter an existing code to add balance.",
+        "🌟 *REDEEM CODE*\n\n"
+        "🌟 *Buy A Redeem Code* — Purchase a code (min Rs.10) and receive it on your email.\n\n"
+        "🎁 *Use A Gift Code* — Enter an existing code to add balance.",
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode="Markdown"
     )
