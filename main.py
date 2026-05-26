@@ -288,7 +288,7 @@ async def send_join_message(update, user_id: int, bot=None):
             row = []
     if row:
         keyboard.append(row)
-    keyboard.append([InlineKeyboardButton("✅ I Have Joined All Channels", callback_data="check_join")])
+    keyboard.append([InlineKeyboardButton("CLAIM 🔒", callback_data="check_join")])
     text = (
         "🔒 *PLEASE FIRST JOIN CHANNELS*\n\n"
         "You must join our channels to use this bot.\n\n"
