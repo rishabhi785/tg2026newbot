@@ -1427,7 +1427,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "redeem_use":
         context.user_data['waiting_for'] = 'redeem_use'
         await query.message.reply_text(
-            "🎟️ *USE REDEEM CODE*\n\nSend Your Redeem Code:",
+            "🎁 *USE Gift CODE*\n\nSend Your Redeem Code:",
             parse_mode="Markdown"
         )
     elif data.startswith("wd_upi_"):
