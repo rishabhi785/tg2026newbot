@@ -792,8 +792,8 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE, 
 
     if text == "Total Users":
         async with turso_connect() as db:
-            total = (await (await db.execute("SELECT COUNT(*) FROM users")).fetchone())[0]
-            verified = (await (await db.execute("SELECT COUNT(*) FROM users WHERE is_verified=1")).fetchone())[0]
+            total = int((await (await db.execute("SELECT COUNT(*) FROM users")).fetchone())[0])
+            verified = int((await (await db.execute("SELECT COUNT(*) FROM users WHERE is_verified=1")).fetchone())[0])
         await update.message.reply_text(
             f"👥 *USER STATISTICS*\n\n"
             f"📊 Total Users: {total}\n"
