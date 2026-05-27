@@ -861,13 +861,13 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE, 
             return
         msg = "📋 PENDING WITHDRAWAL REQUESTS\n\n"
         for r in rows:
-            msg += f"ID: {r[0]} | User: {r[1]} | Rs.{r[2]} | {r[3].upper()}\n"
+            msg += f"`ID: {r[0]} | User: {r[1]} | Rs.{r[2]} | {r[3].upper()}`\n"
             if r[3] == 'upi':
-                msg += f"UPI: {r[4]}\n"
+                msg += f"`UPI: {r[4]}`\n"
             else:
-                msg += f"VSV: {r[5]}\n"
-            msg += f"Date: {r[6][:10]}\n\n"
-        await update.message.reply_text(msg, reply_markup=get_admin_keyboard())
+                msg += f"`VSV: {r[5]}`\n"
+            msg += f"`Date: {r[6][:10]}`\n\n"
+        await update.message.reply_text(msg, reply_markup=get_admin_keyboard(), parse_mode="Markdown")
 
     elif text == "Add Channel":
         context.user_data['admin_action'] = 'add_channel'
@@ -960,10 +960,10 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE, 
             return
         msg = "📋 PENDING REQUESTS\n\n"
         for r in rows:
-            msg += f"ID: {r[0]} | User: {r[1]} | Rs.{r[2]} | {r[3].upper()}\n"
+            msg += f"`ID: {r[0]} | User: {r[1]} | Rs.{r[2]} | {r[3].upper()}`\n"
         msg += "\nSend request ID to approve:"
         context.user_data['admin_action'] = 'approve_withdrawal'
-        await update.message.reply_text(msg)
+        await update.message.reply_text(msg, parse_mode="Markdown")
 
     elif text == "Reject Withdrawal":
         async with turso_connect() as db:
@@ -975,10 +975,10 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE, 
             return
         msg = "📋 PENDING REQUESTS\n\n"
         for r in rows:
-            msg += f"ID: {r[0]} | User: {r[1]} | Rs.{r[2]} | {r[3].upper()}\n"
+            msg += f"`ID: {r[0]} | User: {r[1]} | Rs.{r[2]} | {r[3].upper()}`\n"
         msg += "\nSend request ID to reject (amount will be refunded):"
         context.user_data['admin_action'] = 'reject_withdrawal'
-        await update.message.reply_text(msg)
+        await update.message.reply_text(msg, parse_mode="Markdown")
 
     elif text == "Create Gift Code":
         context.user_data['admin_action'] = 'create_gift_code'
@@ -1374,14 +1374,14 @@ async def handle_redeem_finalize(update, user_id, context, mobile):
     try:
         admin_msg = (
             f"🎟️ NEW REDEEM CODE REQUEST!\n\n"
-            f"Request ID: {req_id}\n"
-            f"User ID: {user_id}\n"
-            f"Amount: Rs.{amount:.2f}\n"
-            f"Email: {email}\n"
-            f"Mobile: {mobile}\n\n"
+            f"Request ID: `{req_id}`\n"
+            f"User ID: `{user_id}`\n"
+            f"Amount: `Rs.{amount:.2f}`\n"
+            f"Email: `{email}`\n"
+            f"Mobile: `{mobile}`\n\n"
             f"Please generate the code manually and send to the user email."
         )
-        await bot_app_global.bot.send_message(chat_id=ADMIN_ID, text=admin_msg)
+        await bot_app_global.bot.send_message(chat_id=ADMIN_ID, text=admin_msg, parse_mode="Markdown")
     except Exception as e:
         logger.error(f"Admin notify error: {e}")
 
