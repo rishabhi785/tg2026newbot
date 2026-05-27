@@ -291,14 +291,14 @@ async def send_join_message(update, user_id: int, bot=None):
         keyboard.append(row)
     keyboard.append([InlineKeyboardButton("CLAIM 🔒", callback_data="check_join")])
     text = (
-        "👑 Hey There\! Welcome To Bot \!\!\n\n"
+        "👑 Hey There\\! Welcome To Bot \\!\\!\n\n"
         "⚪️ Join The Channels Below To Continue\n\n"
         "😍 After Joining Click Claim"
     )
     if hasattr(update, 'message') and update.message:
-        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="MarkdownV2")
     elif hasattr(update, 'edit_message_text'):
-        await update.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        await update.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="MarkdownV2")
 
 
 def get_user_keyboard(user_id: int):
@@ -414,7 +414,6 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def check_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
     user = update.effective_user
 
     channels = await get_active_channels()
@@ -1120,9 +1119,9 @@ async def handle_withdraw(update, user_id, context):
         min_str = f"{min_withdrawal:.0f}".replace(".", "\\.")
         await update.message.reply_text(
             f"*INSUFFICIENT BALANCE*\n\n"
-            f"💵 Your Balance: Rs\.{bal_str}\n"
-            f"🔻 Minimum Withdrawal: Rs\.{min_str}\n\n"
-            f"Refer more users to increase your balance\!",
+            f"💵 Your Balance: Rs\\.{bal_str}\n"
+            f"🔻 Minimum Withdrawal: Rs\\.{min_str}\n\n"
+            f"Refer more users to increase your balance\\!",
             parse_mode="MarkdownV2"
         )
         return
@@ -1517,7 +1516,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         new_balance = float(updated_row[0]) if updated_row and updated_row[0] is not None else (float(balance) + daily_bonus_amount)
         bonus_str = f"{daily_bonus_amount:.2f}".replace(".", "\\.")
         await query.message.reply_text(
-            f"🎁 Bonus Rs\.{bonus_str} Claimed Successfully",
+            f"🎁 Bonus Rs\\.{bonus_str} Claimed Successfully",
             parse_mode="MarkdownV2"
         )
 
@@ -1722,7 +1721,7 @@ async def verify_device(payload: VerifyRequest, request: Request):
                 chat_id=referrer_to_notify,
                 text=(
                     f"🎉 [User {user_id}](tg://user?id={user_id}) got invited by your URL\n"
-                    f"🎁 Rs\.{reward_str} added to your balance"
+                    f"🎁 Rs\\.{reward_str} added to your balance"
                 ),
                 parse_mode="MarkdownV2"
             )
