@@ -319,12 +319,12 @@ def get_admin_keyboard():
         [KeyboardButton("Add Channel"), KeyboardButton("Remove Channel")],
         [KeyboardButton("Update Channel"), KeyboardButton("Broadcast Message")],
         [KeyboardButton("Set Refer Reward"), KeyboardButton("Set Min Withdrawal")],
-        [KeyboardButton("Set Welcome Bonus"), KeyboardButton("Set Daily Bonus")],
-        [KeyboardButton("Set Welcome Bonus"), KeyboardButton("Set Daily Bonus")],
+        [KeyboardButton("Set Daily Bonus")],
         [KeyboardButton("Withdraw ON/OFF"), KeyboardButton("UPI Withdraw ON/OFF")],
         [KeyboardButton("VSV Withdraw ON/OFF"), KeyboardButton("Manual Balance")],
-        [KeyboardButton("Reject Withdrawal"), KeyboardButton("Create Gift Code")],
-        [KeyboardButton("Reset Database"), KeyboardButton("Back To Menu")],
+        [KeyboardButton("Approve Withdrawal"), KeyboardButton("Reject Withdrawal")],
+        [KeyboardButton("Create Gift Code"), KeyboardButton("Reset Database")],
+        [KeyboardButton("Back To Menu")],
     ]
     return ReplyKeyboardMarkup(rows, resize_keyboard=True, one_time_keyboard=False)
 
@@ -500,7 +500,7 @@ async def combined_message_handler(update: Update, context: ContextTypes.DEFAULT
     admin_buttons = [
         "Total Users", "Withdrawal Requests", "Add Channel", "Remove Channel",
         "Update Channel", "Broadcast Message", "Set Refer Reward", "Set Min Withdrawal",
-        "Set Welcome Bonus", "Set Daily Bonus", "Withdraw ON/OFF", "UPI Withdraw ON/OFF", "VSV Withdraw ON/OFF",
+        "Set Daily Bonus", "Withdraw ON/OFF", "UPI Withdraw ON/OFF", "VSV Withdraw ON/OFF",
         "Manual Balance", "Approve Withdrawal", "Reject Withdrawal", "Create Gift Code",
         "Reset Database", "Confirm Reset Database", "Back To Menu"
     ]
@@ -915,14 +915,6 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         context.user_data['admin_action'] = 'set_min_withdrawal'
         await update.message.reply_text(
             f"🔻 *SET MINIMUM WITHDRAWAL*\n\nCurrent: Rs.{current}\n\nSend new amount:",
-            parse_mode="Markdown"
-        )
-
-    elif text == "Set Welcome Bonus":
-        current = await get_setting("welcome_bonus", "10")
-        context.user_data['admin_action'] = 'set_welcome_bonus'
-        await update.message.reply_text(
-            f"🎁 *SET WELCOME BONUS*\n\nCurrent: Rs.{current}\n\nSend new amount:",
             parse_mode="Markdown"
         )
 
