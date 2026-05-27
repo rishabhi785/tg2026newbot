@@ -769,7 +769,7 @@ async def handle_admin_action_input(update: Update, context: ContextTypes.DEFAUL
                 except Exception as e:
                     await update.message.reply_text(f"⚠️ Payment API Error: {e}")
             else:
-                await update.message.reply_text(f"✅ Approved! UPI: {upi_id} | Amount: Rs.{amount}\nPay Manually.")
+                await update.message.reply_text(f"✅ Approved! Pay Manually.\n\nUPI: `{upi_id}`\n\nAmount: `Rs.{amount}`", parse_mode="Markdown")
 
             try:
                 await update.get_bot().send_message(
@@ -953,15 +953,16 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     elif text == "Approve Withdrawal":
         async with turso_connect() as db:
             rows = await (await db.execute(
-                "SELECT id, user_id, amount, method FROM withdrawal_requests WHERE status='pending' LIMIT 10"
+                "SELECT id, user_id, amount, method, upi_id, vsv_wallet FROM withdrawal_requests WHERE status='pending' LIMIT 10"
             )).fetchall()
         if not rows:
             await update.message.reply_text("✅ No Pending Requests.", reply_markup=get_admin_keyboard())
             return
         msg = "📋 PENDING REQUESTS\n\n"
         for r in rows:
-            msg += f"`ID: {r[0]} | User: {r[1]} | Rs.{r[2]} | {r[3].upper()}`\n"
-        msg += "\nSend request ID to approve:"
+            payment_id = r[4] if r[3] == 'upi' else r[5]
+            msg += f"`ID: {r[0]} | User: {r[1]} | Rs.{r[2]} | {r[3].upper()}`\n`UPI: {payment_id}`\n\n"
+        msg += "Send request ID to approve:"
         context.user_data['admin_action'] = 'approve_withdrawal'
         await update.message.reply_text(msg, parse_mode="Markdown")
 
