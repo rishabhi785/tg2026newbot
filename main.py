@@ -1514,10 +1514,9 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         async with turso_connect() as db:
             updated_row = await (await db.execute("SELECT balance FROM user_balance WHERE user_id=?", (target_uid,))).fetchone()
         new_balance = float(updated_row[0]) if updated_row and updated_row[0] is not None else (float(balance) + daily_bonus_amount)
-        bonus_str = f"{daily_bonus_amount:.2f}".replace(".", "\\.")
+        bonus_str = f"{daily_bonus_amount:.2f}"
         await query.message.reply_text(
-            f"🎁 Bonus Rs\\.{bonus_str} Claimed Successfully",
-            parse_mode="MarkdownV2"
+            f"🎁 Bonus Rs.{bonus_str} Claimed Successfully"
         )
 
     elif data.startswith("bonus_gift_"):
