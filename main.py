@@ -291,7 +291,7 @@ async def send_join_message(update, user_id: int, bot=None):
         keyboard.append(row)
     keyboard.append([InlineKeyboardButton("CLAIM 🔒", callback_data="check_join")])
     text = (
-        "👑 Hey There\\! Welcome To Bot \\!\\!\n\n"
+        "👑 Hey There! Welcome To Bot!!\n\n"
         "⚪️ Join The Channels Below To Continue\n\n"
         "😍 After Joining Click Claim"
     )
@@ -405,7 +405,6 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         keyboard = [[InlineKeyboardButton("🔐 Verify Device", web_app=WebAppInfo(url=WEBAPP_URL))]]
         await update.message.reply_text(
-            "🔐 Verify Yourself To Start Bot\n\n"
             "🛡️ *Verify your self*",
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode="Markdown"
