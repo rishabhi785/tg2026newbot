@@ -296,9 +296,9 @@ async def send_join_message(update, user_id: int, bot=None):
         "😍 After Joining Click Claim"
     )
     if hasattr(update, 'message') and update.message:
-        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="MarkdownV2")
+        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
     elif hasattr(update, 'edit_message_text'):
-        await update.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="MarkdownV2")
+        await update.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
 def get_user_keyboard(user_id: int):
@@ -405,6 +405,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         keyboard = [[InlineKeyboardButton("🔐 Verify Device", web_app=WebAppInfo(url=WEBAPP_URL))]]
         await update.message.reply_text(
+            "🔐 Verify Yourself To Start Bot\n\n"
             "🛡️ *Verify your self*",
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode="Markdown"
