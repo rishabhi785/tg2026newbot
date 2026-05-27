@@ -291,9 +291,9 @@ async def send_join_message(update, user_id: int, bot=None):
         keyboard.append(row)
     keyboard.append([InlineKeyboardButton("CLAIM 🔒", callback_data="check_join")])
     text = (
-        "🔒 *PLEASE FIRST JOIN CHANNELS*\n\n"
-        "You must join our channels to use this bot.\n\n"
-        "👇 Join all channels below, then click the button:"
+        "👑 Hey There\! Welcome To Bot \!\!\n\n"
+        "⚪️ Join The Channels Below To Continue\n\n"
+        "😍 After Joining Click Claim"
     )
     if hasattr(update, 'message') and update.message:
         await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
@@ -405,9 +405,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         keyboard = [[InlineKeyboardButton("🔐 Verify Device", web_app=WebAppInfo(url=WEBAPP_URL))]]
         await update.message.reply_text(
-            "🔒 *DEVICE VERIFICATION REQUIRED*\n\n"
-            "Please verify your device to start using the bot.\n\n"
-            "Tap the button below to verify:",
+            "🔐 Verify Yourself To Start Bot\n\n"
+            "🛡️ *Verify your self*",
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode="Markdown"
         )
@@ -418,17 +417,35 @@ async def check_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     await query.answer()
     user = update.effective_user
 
-    is_member = await check_all_channels(context.bot, user.id)
-    if not is_member:
-        await query.answer("❌ You have not joined all channels yet!", show_alert=True)
+    channels = await get_active_channels()
+    not_joined = []
+    for ch in channels:
+        try:
+            member = await context.bot.get_chat_member(chat_id=f"@{ch[1]}", user_id=user.id)
+            if member.status not in ["member", "administrator", "creator"]:
+                not_joined.append(ch[3] or ch[1])
+        except:
+            not_joined.append(ch[3] or ch[1])
+
+    if not_joined:
+        channel_list = "\n".join(not_joined)
+        await query.answer(
+            f"🚫 You Didn't Join These Channels 👇\n{channel_list}",
+            show_alert=True
+        )
         return
+    is_member = True
 
     async with turso_connect() as db:
         row = await (await db.execute("SELECT is_verified FROM users WHERE user_id = ?", (user.id,))).fetchone()
         is_verified = int(row[0]) if row and row[0] is not None else 0
 
     if is_verified == 1:
-        await query.edit_message_text("✅ All channels joined!")
+        # Already verified - show main menu directly, no extra message
+        try:
+            await query.message.delete()
+        except:
+            pass
         await query.message.reply_text(
             f"🏡 *Welcome To UPI Giveaway Bot!*\n\n"
             f"Earn money easily and redeem code 💸\n\n"
@@ -437,6 +454,7 @@ async def check_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
             parse_mode="Markdown"
         )
     else:
+        # T3: No "channels joined" message - directly show verify button
         keyboard = [[InlineKeyboardButton("🔐 Verify Device", web_app=WebAppInfo(url=WEBAPP_URL))]]
         await query.edit_message_text(
             "✅ *CHANNELS JOINED!*\n\n"
@@ -533,7 +551,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if is_verified != 1:
             keyboard = [[InlineKeyboardButton("🔐 Verify Device", web_app=WebAppInfo(url=WEBAPP_URL))]]
             await update.message.reply_text(
-                "🔒 *DEVICE VERIFICATION REQUIRED*\n\nPlease verify your device first.",
+                "🔐 Verify Yourself To Start Bot\n\n"
+                "🛡️ *Verify your self*",
                 reply_markup=InlineKeyboardMarkup(keyboard),
                 parse_mode="Markdown"
             )
@@ -587,7 +606,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data['waiting_for'] = None
         else:
             await update.message.reply_text(
-                "ℹ️ Please use the menu buttons to navigate.",
+                "🌟 Please use reply keyboard button",
                 reply_markup=get_user_keyboard(user_id)
             )
 
@@ -1099,11 +1118,11 @@ async def handle_withdraw(update, user_id, context):
 
     if balance < min_withdrawal:
         await update.message.reply_text(
-            f"❌ *INSUFFICIENT BALANCE*\n\n"
-            f"💵 Your Balance: Rs.{balance:.2f}\n"
-            f"🔻 Minimum Withdrawal: Rs.{min_withdrawal:.0f}\n\n"
-            f"Refer more users to increase your balance! 👥",
-            parse_mode="Markdown"
+            f"*INSUFFICIENT BALANCE*\n\n"
+            f"💵 Your Balance: Rs\.{balance:.2f}\n"
+            f"🔻 Minimum Withdrawal: Rs\.{min_withdrawal:.0f}\n\n"
+            f"Refer more users to increase your balance\!",
+            parse_mode="MarkdownV2"
         )
         return
 
@@ -1143,7 +1162,7 @@ async def handle_withdraw_amount(update, user_id, context, text):
     try:
         amount = float(text)
     except:
-        await update.message.reply_text("⚠️ Please send a valid amount.")
+        await update.message.reply_text("Please send a valid amount.")
         return
 
     balance = context.user_data.get('withdraw_balance', 0)
@@ -1152,7 +1171,7 @@ async def handle_withdraw_amount(update, user_id, context, text):
     vsv_wallet = context.user_data.get('withdraw_vsv')
 
     if amount < min_withdrawal:
-        await update.message.reply_text(f"⚠️ Minimum Withdrawal Is Rs.{min_withdrawal:.0f}")
+        await update.message.reply_text(f"Minimum Withdrawal Is Rs.{min_withdrawal:.0f}")
         return
     if amount > balance:
         await update.message.reply_text(f"❌ Insufficient Balance. Your Balance: Rs.{balance:.2f}")
@@ -1291,12 +1310,12 @@ async def handle_leaderboard(update):
 async def handle_redeem_code_menu(update, user_id, context):
     keyboard = [
         [InlineKeyboardButton("🛒 Buy Redeem Code", callback_data="redeem_buy")],
-        [InlineKeyboardButton("🎟️ Use Redeem Code", callback_data="redeem_use")],
+        [InlineKeyboardButton("🎁 Use Gift Code", callback_data="redeem_use")],
     ]
     await update.message.reply_text(
-        "🎟️ *REDEEM CODE*\n\n"
+        "*REDEEM CODE*\n\n"
         "🛒 *Buy A Redeem Code* — Purchase a code (min Rs.10) and receive it on your email.\n\n"
-        "🎟️ *Use A Redeem Code* — Enter an existing code to add balance.",
+        "*Use A Gift 🎁 Code* — Enter an existing code to add balance.",
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode="Markdown"
     )
@@ -1306,12 +1325,12 @@ async def handle_redeem_buy(update, user_id, context, text):
     try:
         amount = float(text)
     except:
-        await update.message.reply_text("⚠️ Please Send A Valid Amount (Minimum Rs.10).")
+        await update.message.reply_text("Please Send A Valid Amount (Minimum Rs.10).")
         return
 
     redeem_price = float(await get_setting("redeem_code_price", "10"))
     if amount < redeem_price:
-        await update.message.reply_text(f"⚠️ Minimum Redeem Code Amount Is Rs.{redeem_price:.0f}")
+        await update.message.reply_text(f"Minimum Redeem Code Amount Is Rs.{redeem_price:.0f}")
         return
 
     async with turso_connect() as db:
@@ -1319,7 +1338,7 @@ async def handle_redeem_buy(update, user_id, context, text):
     balance = row[0] if row else 0.0
 
     if balance < amount:
-        await update.message.reply_text(f"❌ Insufficient Balance. Your Balance: Rs.{balance:.2f}")
+        await update.message.reply_text(f"Insufficient Balance. Your Balance: Rs.{balance:.2f}")
         context.user_data['waiting_for'] = None
         return
 
@@ -1496,11 +1515,8 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             updated_row = await (await db.execute("SELECT balance FROM user_balance WHERE user_id=?", (target_uid,))).fetchone()
         new_balance = float(updated_row[0]) if updated_row and updated_row[0] is not None else (float(balance) + daily_bonus_amount)
         await query.message.reply_text(
-            f"🎁 *DAILY BONUS CLAIMED!*\n\n"
-            f"💰 +RS.{daily_bonus_amount:.2f} ADDED!\n"
-            f"💵 NEW BALANCE: RS.{new_balance:.2f}\n\n"
-            f"Come back tomorrow for more! 🚀",
-            parse_mode="Markdown"
+            f"🎁 Bonus Rs\.{daily_bonus_amount:.2f} Claimed Successfully",
+            parse_mode="MarkdownV2"
         )
 
     elif data.startswith("bonus_gift_"):
@@ -1520,7 +1536,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "redeem_use":
         context.user_data['waiting_for'] = 'redeem_use'
         await query.message.reply_text(
-            "🎟️ *USE REDEEM CODE*\n\nSend Your Redeem Code:",
+            "🎁 *USE Gift CODE*\n\nSend Your Gift Code:",
             parse_mode="Markdown"
         )
     elif data.startswith("wd_upi_"):
@@ -1702,11 +1718,10 @@ async def verify_device(payload: VerifyRequest, request: Request):
             await bot_app_global.bot.send_message(
                 chat_id=referrer_to_notify,
                 text=(
-                    f"🎉 *REFERRAL BONUS!*\n\n"
-                    f"User ID: `{user_id}`\n"
-                    f"💸 Earned: Rs.{referrer_reward_amount:.2f}"
+                    f"🎉 [User {user_id}](tg://user?id={user_id}) got invited by your URL\n"
+                    f"🎁 Rs\.{referrer_reward_amount:.2f} added to your balance"
                 ),
-                parse_mode="Markdown"
+                parse_mode="MarkdownV2"
             )
         except Exception as e:
             logger.error(f"Referrer notify error: {e}")
