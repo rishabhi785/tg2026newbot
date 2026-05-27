@@ -1611,25 +1611,31 @@ async def verify_device(payload: VerifyRequest, request: Request):
         if was_verified == 0:
             if welcome_bonus > 0:
                 await db.execute("UPDATE user_balance SET balance = balance + ? WHERE user_id=?", (welcome_bonus, user_id))
-
-            # Flush first so pending_referrer is readable
             await db.commit()
 
-            # Give referral bonus to referrer now (after verification)
-            referrer_row = await (await db.execute("SELECT value FROM bot_settings WHERE key=?", (f"pending_referrer_{user_id}",))).fetchone()
-            if referrer_row:
-                referrer_id_val = int(referrer_row[0])
-                refer_reward = float(await get_setting("refer_reward", "5"))
-                await db.execute(
+        await db.commit()
+
+    # Referral bonus - use completely separate connection
+    if was_verified == 0:
+        async with turso_connect() as db2:
+            referrer_row = await (await db2.execute(
+                "SELECT value FROM bot_settings WHERE key=?",
+                (f"pending_referrer_{user_id}",)
+            )).fetchone()
+
+        if referrer_row:
+            referrer_id_val = int(referrer_row[0])
+            refer_reward = float(await get_setting("refer_reward", "5"))
+            async with turso_connect() as db3:
+                await db3.execute(
                     "UPDATE user_balance SET balance = balance + ?, referral_count = referral_count + 1 WHERE user_id=?",
                     (refer_reward, referrer_id_val)
                 )
-                await db.execute("DELETE FROM bot_settings WHERE key=?", (f"pending_referrer_{user_id}",))
-                await db.commit()
-                referrer_to_notify = referrer_id_val
-                referrer_reward_amount = refer_reward
+                await db3.execute("DELETE FROM bot_settings WHERE key=?", (f"pending_referrer_{user_id}",))
+                await db3.commit()
+            referrer_to_notify = referrer_id_val
+            referrer_reward_amount = refer_reward
 
-        await db.commit()
 
     # Notify referrer if applicable
     if referrer_to_notify:
