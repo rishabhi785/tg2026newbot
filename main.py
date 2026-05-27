@@ -342,6 +342,10 @@ async def send_main_menu(update: Update, name: str, user_id: int):
 # ===================== COMMAND HANDLERS =====================
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Group/supergroup me kuch nahi karo - silently ignore
+    if update.effective_chat and update.effective_chat.type in ("group", "supergroup"):
+        return
+
     user = update.effective_user
     # Clear any previous state
     context.user_data.clear()
@@ -493,6 +497,10 @@ async def web_app_data_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 # ===================== COMBINED MESSAGE HANDLER =====================
 
 async def combined_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Group/supergroup me kuch nahi karo - silently ignore
+    if update.effective_chat and update.effective_chat.type in ("group", "supergroup"):
+        return
+
     text = update.message.text
     user_id = update.effective_user.id
 
@@ -527,6 +535,10 @@ async def combined_message_handler(update: Update, context: ContextTypes.DEFAULT
 # ===================== BUTTON HANDLER =====================
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Group/supergroup me kuch nahi karo - silently ignore
+    if update.effective_chat and update.effective_chat.type in ("group", "supergroup"):
+        return
+
     text = update.message.text
     user_id = update.effective_user.id
 
