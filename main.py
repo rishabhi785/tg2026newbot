@@ -323,6 +323,7 @@ def get_admin_keyboard():
         [KeyboardButton("Withdraw ON/OFF"), KeyboardButton("UPI Withdraw ON/OFF")],
         [KeyboardButton("VSV Withdraw ON/OFF"), KeyboardButton("Manual Balance")],
         [KeyboardButton("Approve Withdrawal"), KeyboardButton("Reject Withdrawal")],
+        [KeyboardButton("RDM Requests"), KeyboardButton("Approve RDM")],
         [KeyboardButton("Create Gift Code"), KeyboardButton("Reset Database")],
         [KeyboardButton("Back To Menu")],
     ]
@@ -510,7 +511,8 @@ async def combined_message_handler(update: Update, context: ContextTypes.DEFAULT
         "Update Channel", "Broadcast Message", "Set Refer Reward", "Set Min Withdrawal",
         "Set Daily Bonus", "Withdraw ON/OFF", "UPI Withdraw ON/OFF", "VSV Withdraw ON/OFF",
         "Manual Balance", "Approve Withdrawal", "Reject Withdrawal", "Create Gift Code",
-        "Reset Database", "Confirm Reset Database", "Back To Menu"
+        "Reset Database", "Confirm Reset Database", "Back To Menu",
+        "RDM Requests", "Approve RDM"
     ]
 
     if user_id == ADMIN_ID:
@@ -796,6 +798,53 @@ async def handle_admin_action_input(update: Update, context: ContextTypes.DEFAUL
         context.user_data['admin_action'] = None
         await update.message.reply_text("Action Complete.", reply_markup=get_admin_keyboard())
 
+    elif action == 'approve_rdm':
+        try:
+            rdm_id = int(text)
+            async with turso_connect() as db:
+                req = await (await db.execute(
+                    "SELECT user_id, amount, email, mobile, code FROM redeem_codes WHERE id=? AND status='pending'",
+                    (rdm_id,)
+                )).fetchone()
+                if not req:
+                    await update.message.reply_text("⚠️ RDM Request Not Found Or Already Processed.")
+                    context.user_data['admin_action'] = None
+                    return
+                uid, amount, email, mobile, code = req
+                await db.execute(
+                    "UPDATE redeem_codes SET status='approved', code=? WHERE id=?",
+                    (code, rdm_id)
+                )
+                await db.commit()
+
+            await update.message.reply_text(
+                f"✅ RDM Request Approved!\n\n"
+                f"User ID: `{uid}`\n"
+                f"Amount: `Rs.{amount:.2f}`\n"
+                f"Email: `{email}`\n"
+                f"Mobile: `{mobile}`\n\n"
+                f"Please send the redeem code to the user's email manually.",
+                parse_mode="Markdown",
+                reply_markup=get_admin_keyboard()
+            )
+
+            try:
+                await update.get_bot().send_message(
+                    chat_id=uid,
+                    text=(
+                        f"🎟️ *REDEEM CODE REQUEST APPROVED!*\n\n"
+                        f"💰 Amount: Rs.{amount:.2f}\n"
+                        f"📧 Email: {email}\n\n"
+                        f"✅ Your redeem code will be sent to your email shortly!"
+                    ),
+                    parse_mode="Markdown"
+                )
+            except:
+                pass
+        except:
+            await update.message.reply_text("⚠️ Send A Valid RDM ID.")
+        context.user_data['admin_action'] = None
+
     elif action == 'create_gift_code':
         parts = text.split("|")
         try:
@@ -991,6 +1040,42 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE, 
             msg += f"`ID: {r[0]} | User: {r[1]} | Rs.{r[2]} | {r[3].upper()}`\n"
         msg += "\nSend request ID to reject (amount will be refunded):"
         context.user_data['admin_action'] = 'reject_withdrawal'
+        await update.message.reply_text(msg, parse_mode="Markdown")
+
+    elif text == "RDM Requests":
+        async with turso_connect() as db:
+            rows = await (await db.execute(
+                "SELECT id, user_id, amount, email, mobile, created_at FROM redeem_codes WHERE status='pending' AND code LIKE 'REQ-%' ORDER BY created_at DESC LIMIT 10"
+            )).fetchall()
+        if not rows:
+            await update.message.reply_text("✅ No Pending RDM Requests.", reply_markup=get_admin_keyboard())
+            return
+        msg = "🎟️ PENDING RDM REQUESTS\n\n"
+        for r in rows:
+            msg += (
+                f"`RDM ID: {r[0]}`\n"
+                f"`User ID: {r[1]}`\n"
+                f"`Amount: Rs.{r[2]}`\n"
+                f"`Email: {r[3]}`\n"
+                f"`Mobile: {r[4]}`\n"
+                f"`Date: {str(r[5])[:10]}`\n\n"
+            )
+        msg += "Use *Approve RDM* button to approve a request."
+        await update.message.reply_text(msg, parse_mode="Markdown", reply_markup=get_admin_keyboard())
+
+    elif text == "Approve RDM":
+        async with turso_connect() as db:
+            rows = await (await db.execute(
+                "SELECT id, user_id, amount, email FROM redeem_codes WHERE status='pending' AND code LIKE 'REQ-%' ORDER BY created_at DESC LIMIT 10"
+            )).fetchall()
+        if not rows:
+            await update.message.reply_text("✅ No Pending RDM Requests.", reply_markup=get_admin_keyboard())
+            return
+        msg = "🎟️ PENDING RDM REQUESTS\n\n"
+        for r in rows:
+            msg += f"`RDM ID: {r[0]} | User: {r[1]} | Rs.{r[2]}`\n`Email: {r[3]}`\n\n"
+        msg += "Send RDM ID to approve:"
+        context.user_data['admin_action'] = 'approve_rdm'
         await update.message.reply_text(msg, parse_mode="Markdown")
 
     elif text == "Create Gift Code":
@@ -1380,19 +1465,25 @@ async def handle_redeem_finalize(update, user_id, context, mobile):
             (unique_code, amount, user_id, email, mobile)
         )
         await db.commit()
-        req_id = unique_code
+
+    # Numeric DB id fetch karo approve ke liye
+    async with turso_connect() as db2:
+        id_row = await (await db2.execute("SELECT id FROM redeem_codes WHERE code=?", (unique_code,))).fetchone()
+    numeric_id = id_row[0] if id_row else "?"
+    req_id = unique_code
 
     context.user_data.clear()
 
     try:
         admin_msg = (
             f"🎟️ NEW REDEEM CODE REQUEST!\n\n"
-            f"Request ID: `{req_id}`\n"
+            f"RDM ID: `{numeric_id}`\n"
+            f"Request Code: `{req_id}`\n"
             f"User ID: `{user_id}`\n"
             f"Amount: `Rs.{amount:.2f}`\n"
             f"Email: `{email}`\n"
             f"Mobile: `{mobile}`\n\n"
-            f"Please generate the code manually and send to the user email."
+            f"Use *Approve RDM* button and send RDM ID: `{numeric_id}` to approve."
         )
         await bot_app_global.bot.send_message(chat_id=ADMIN_ID, text=admin_msg, parse_mode="Markdown")
     except Exception as e:
