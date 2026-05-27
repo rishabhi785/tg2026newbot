@@ -1560,7 +1560,7 @@ async def verify_device(payload: VerifyRequest, request: Request):
 
         # Check if already verified (to avoid double bonus)
         already_verified = await (await db.execute("SELECT is_verified FROM users WHERE user_id=?", (user_id,))).fetchone()
-        was_verified = already_verified[0] if already_verified else 0
+        was_verified = int(already_verified[0]) if already_verified and already_verified[0] is not None else 0
 
         await db.execute(
             """INSERT INTO users (user_id, username, first_name, is_verified, device_id, verified_at)
@@ -1577,32 +1577,47 @@ async def verify_device(payload: VerifyRequest, request: Request):
             await db.commit()
 
         # Give welcome bonus only once (first verification)
-        if not was_verified:
+        referrer_to_notify = None
+        referrer_reward_amount = 0.0
+
+        if was_verified == 0:
             if welcome_bonus > 0:
                 await db.execute("UPDATE user_balance SET balance = balance + ? WHERE user_id=?", (welcome_bonus, user_id))
+
+            # Flush first so pending_referrer is readable
+            await db.commit()
 
             # Give referral bonus to referrer now (after verification)
             referrer_row = await (await db.execute("SELECT value FROM bot_settings WHERE key=?", (f"pending_referrer_{user_id}",))).fetchone()
             if referrer_row:
-                referrer_id = int(referrer_row[0])
+                referrer_id_val = int(referrer_row[0])
                 refer_reward = float(await get_setting("refer_reward", "5"))
                 await db.execute(
                     "UPDATE user_balance SET balance = balance + ?, referral_count = referral_count + 1 WHERE user_id=?",
-                    (refer_reward, referrer_id)
+                    (refer_reward, referrer_id_val)
                 )
                 await db.execute("DELETE FROM bot_settings WHERE key=?", (f"pending_referrer_{user_id}",))
                 await db.commit()
-                # Notify referrer
-                try:
-                    await bot_app_global.bot.send_message(
-                        chat_id=referrer_id,
-                        text=f"🎉 *REFERRAL BONUS!*\n\nYour friend verified their device!\n💸 You earned Rs.{refer_reward:.2f}",
-                        parse_mode="Markdown"
-                    )
-                except:
-                    pass
+                referrer_to_notify = referrer_id_val
+                referrer_reward_amount = refer_reward
 
         await db.commit()
+
+    # Notify referrer if applicable
+    if referrer_to_notify:
+        try:
+            # Get referrer updated balance
+            await bot_app_global.bot.send_message(
+                chat_id=referrer_to_notify,
+                text=(
+                    f"🎉 *REFERRAL BONUS!*\n\n"
+                    f"User ID: `{user_id}`\n"
+                    f"💸 Earned: Rs.{referrer_reward_amount:.2f}"
+                ),
+                parse_mode="Markdown"
+            )
+        except Exception as e:
+            logger.error(f"Referrer notify error: {e}")
 
     # Bot se directly user ko main menu bhejo
     first_name = user_data.get("first_name", "User")
