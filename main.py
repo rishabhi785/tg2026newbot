@@ -322,7 +322,7 @@ def get_admin_keyboard():
         [KeyboardButton("UPI Withdraw ON/OFF"), KeyboardButton("VSV Withdraw ON/OFF")],
         [KeyboardButton("Manual Balance"), KeyboardButton("Approve Withdrawal")],
         [KeyboardButton("Reject Withdrawal"), KeyboardButton("Create Gift Code")],
-        [KeyboardButton("Back To Menu")],
+        [KeyboardButton("Reset Database"), KeyboardButton("Back To Menu")],
     ]
     return ReplyKeyboardMarkup(rows, resize_keyboard=True, one_time_keyboard=False)
 
@@ -465,7 +465,8 @@ async def combined_message_handler(update: Update, context: ContextTypes.DEFAULT
         "Total Users", "Withdrawal Requests", "Add Channel", "Remove Channel",
         "Update Channel", "Broadcast Message", "Set Refer Reward", "Set Min Withdrawal",
         "Set Welcome Bonus", "Withdraw ON/OFF", "UPI Withdraw ON/OFF", "VSV Withdraw ON/OFF",
-        "Manual Balance", "Approve Withdrawal", "Reject Withdrawal", "Create Gift Code", "Back To Menu"
+        "Manual Balance", "Approve Withdrawal", "Reject Withdrawal", "Create Gift Code",
+        "Reset Database", "Confirm Reset Database", "Back To Menu"
     ]
 
     if user_id == ADMIN_ID:
@@ -958,6 +959,33 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         status = "ENABLED" if new_val == "1" else "DISABLED"
         await update.message.reply_text(
             f"VSV Withdrawal Is Now: {status}",
+            reply_markup=get_admin_keyboard()
+        )
+
+    elif text == "Reset Database":
+        await update.message.reply_text(
+            "\u26a0\ufe0f ARE YOU SURE?\n\n"
+            "This will DELETE all users, balances, referrals, device registrations.\n\n"
+            "Channels and settings will be kept.\n\n"
+            "Click Confirm Reset Database to proceed:",
+            reply_markup=ReplyKeyboardMarkup(
+                [[KeyboardButton("Confirm Reset Database")], [KeyboardButton("Back To Menu")]],
+                resize_keyboard=True
+            )
+        )
+
+    elif text == "Confirm Reset Database":
+        async with turso_connect() as db:
+            await db.execute("DELETE FROM users")
+            await db.execute("DELETE FROM user_balance")
+            await db.execute("DELETE FROM device_registry")
+            await db.execute("DELETE FROM ip_registry")
+            await db.execute("DELETE FROM persistent_device_registry")
+            await db.execute("DELETE FROM withdrawal_requests")
+            await db.execute("DELETE FROM redeem_codes")
+            await db.commit()
+        await update.message.reply_text(
+            "\u2705 DATABASE RESET COMPLETE!\n\nAll users, balances, referrals and device data deleted.\nChannels and settings are intact.",
             reply_markup=get_admin_keyboard()
         )
 
