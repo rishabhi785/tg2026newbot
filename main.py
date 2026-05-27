@@ -457,8 +457,7 @@ async def check_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         # T3: No "channels joined" message - directly show verify button
         keyboard = [[InlineKeyboardButton("🔐 Verify Device", web_app=WebAppInfo(url=WEBAPP_URL))]]
         await query.edit_message_text(
-            "✅ *CHANNELS JOINED!*\n\n"
-            "🔒 Now verify your device to continue:",
+            "🛡️ *Verify your self*",
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode="Markdown"
         )
@@ -1117,10 +1116,12 @@ async def handle_withdraw(update, user_id, context):
     min_withdrawal = float(await get_setting("min_withdrawal", "50"))
 
     if balance < min_withdrawal:
+        bal_str = f"{balance:.2f}".replace(".", "\\.")
+        min_str = f"{min_withdrawal:.0f}".replace(".", "\\.")
         await update.message.reply_text(
             f"*INSUFFICIENT BALANCE*\n\n"
-            f"💵 Your Balance: Rs\.{balance:.2f}\n"
-            f"🔻 Minimum Withdrawal: Rs\.{min_withdrawal:.0f}\n\n"
+            f"💵 Your Balance: Rs\.{bal_str}\n"
+            f"🔻 Minimum Withdrawal: Rs\.{min_str}\n\n"
             f"Refer more users to increase your balance\!",
             parse_mode="MarkdownV2"
         )
@@ -1514,8 +1515,9 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         async with turso_connect() as db:
             updated_row = await (await db.execute("SELECT balance FROM user_balance WHERE user_id=?", (target_uid,))).fetchone()
         new_balance = float(updated_row[0]) if updated_row and updated_row[0] is not None else (float(balance) + daily_bonus_amount)
+        bonus_str = f"{daily_bonus_amount:.2f}".replace(".", "\\.")
         await query.message.reply_text(
-            f"🎁 Bonus Rs\.{daily_bonus_amount:.2f} Claimed Successfully",
+            f"🎁 Bonus Rs\.{bonus_str} Claimed Successfully",
             parse_mode="MarkdownV2"
         )
 
@@ -1715,11 +1717,12 @@ async def verify_device(payload: VerifyRequest, request: Request):
     if referrer_to_notify:
         try:
             # Get referrer updated balance
+            reward_str = f"{referrer_reward_amount:.2f}".replace(".", "\\.")
             await bot_app_global.bot.send_message(
                 chat_id=referrer_to_notify,
                 text=(
                     f"🎉 [User {user_id}](tg://user?id={user_id}) got invited by your URL\n"
-                    f"🎁 Rs\.{referrer_reward_amount:.2f} added to your balance"
+                    f"🎁 Rs\.{reward_str} added to your balance"
                 ),
                 parse_mode="MarkdownV2"
             )
