@@ -386,6 +386,12 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ADMIN BYPASS - Admin always gets main menu directly
     if user.id == ADMIN_ID:
+        # Mark admin as verified so all balance operations work correctly
+        async with turso_connect() as dbadmin:
+            await dbadmin.execute(
+                "UPDATE users SET is_verified=1 WHERE user_id=?", (user.id,)
+            )
+            await dbadmin.commit()
         await send_main_menu(update, user.first_name, user.id)
         return
 
@@ -1474,10 +1480,21 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-        new_balance = float(balance) + daily_bonus_amount
         async with turso_connect() as db:
-            await db.execute("UPDATE user_balance SET balance=?, last_bonus_claim=? WHERE user_id=?", (new_balance, now, target_uid))
+            # Ensure row exists first (fixes admin and any edge case where row is missing)
+            await db.execute(
+                "INSERT OR IGNORE INTO user_balance (user_id, balance) VALUES (?, 0.0)",
+                (target_uid,)
+            )
+            await db.execute(
+                "UPDATE user_balance SET balance = balance + ?, last_bonus_claim=? WHERE user_id=?",
+                (daily_bonus_amount, now, target_uid)
+            )
             await db.commit()
+        # Fetch actual updated balance to display correct value
+        async with turso_connect() as db:
+            updated_row = await (await db.execute("SELECT balance FROM user_balance WHERE user_id=?", (target_uid,))).fetchone()
+        new_balance = float(updated_row[0]) if updated_row and updated_row[0] is not None else (float(balance) + daily_bonus_amount)
         await query.message.reply_text(
             f"🎁 *DAILY BONUS CLAIMED!*\n\n"
             f"💰 +RS.{daily_bonus_amount:.2f} ADDED!\n"
