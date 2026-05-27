@@ -234,6 +234,7 @@ async def init_db():
             ("refer_reward", "5"),
             ("min_withdrawal", "50"),
             ("welcome_bonus", "10"),
+            ("daily_bonus", "1"),
             ("withdrawal_enabled", "1"),
             ("redeem_code_price", "10"),
         ]
@@ -318,9 +319,10 @@ def get_admin_keyboard():
         [KeyboardButton("Add Channel"), KeyboardButton("Remove Channel")],
         [KeyboardButton("Update Channel"), KeyboardButton("Broadcast Message")],
         [KeyboardButton("Set Refer Reward"), KeyboardButton("Set Min Withdrawal")],
-        [KeyboardButton("Set Welcome Bonus"), KeyboardButton("Withdraw ON/OFF")],
-        [KeyboardButton("UPI Withdraw ON/OFF"), KeyboardButton("VSV Withdraw ON/OFF")],
-        [KeyboardButton("Manual Balance"), KeyboardButton("Approve Withdrawal")],
+        [KeyboardButton("Set Welcome Bonus"), KeyboardButton("Set Daily Bonus")],
+        [KeyboardButton("Set Welcome Bonus"), KeyboardButton("Set Daily Bonus")],
+        [KeyboardButton("Withdraw ON/OFF"), KeyboardButton("UPI Withdraw ON/OFF")],
+        [KeyboardButton("VSV Withdraw ON/OFF"), KeyboardButton("Manual Balance")],
         [KeyboardButton("Reject Withdrawal"), KeyboardButton("Create Gift Code")],
         [KeyboardButton("Reset Database"), KeyboardButton("Back To Menu")],
     ]
@@ -353,21 +355,29 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except:
             pass
 
+    # Check existing user separately first
+    async with turso_connect() as dbcheck:
+        existing_row = await (await dbcheck.execute("SELECT user_id FROM users WHERE user_id=?", (user.id,))).fetchone()
+    is_new_user = existing_row is None
+
     async with turso_connect() as db:
-        existing = await (await db.execute("SELECT user_id FROM users WHERE user_id=?", (user.id,))).fetchone()
         await db.execute(
             "INSERT OR IGNORE INTO users (user_id, username, first_name) VALUES (?, ?, ?)",
             (user.id, user.username, user.first_name)
         )
         await db.execute("INSERT OR IGNORE INTO user_balance (user_id) VALUES (?)", (user.id,))
-
-        # Store referrer_id only for new users (bonus given after verification)
-        if not existing and referrer_id:
-            await db.execute("INSERT OR IGNORE INTO bot_settings (key, value) VALUES (?, ?)", (f"pending_referrer_{user.id}", str(referrer_id)))
-
         await db.commit()
 
-        row = await (await db.execute("SELECT is_verified FROM users WHERE user_id = ?", (user.id,))).fetchone()
+    # Store referrer_id only for new users (bonus given after verification)
+    if is_new_user and referrer_id:
+        async with turso_connect() as dbref:
+            # Delete any existing pending referrer first, then insert fresh
+            await dbref.execute("DELETE FROM bot_settings WHERE key=?", (f"pending_referrer_{user.id}",))
+            await dbref.execute("INSERT INTO bot_settings (key, value) VALUES (?, ?)", (f"pending_referrer_{user.id}", str(referrer_id)))
+            await dbref.commit()
+
+    async with turso_connect() as dbv:
+        row = await (await dbv.execute("SELECT is_verified FROM users WHERE user_id = ?", (user.id,))).fetchone()
         is_verified = int(row[0]) if row and row[0] is not None else 0
 
     # ADMIN BYPASS - Admin always gets main menu directly
@@ -464,7 +474,7 @@ async def combined_message_handler(update: Update, context: ContextTypes.DEFAULT
     admin_buttons = [
         "Total Users", "Withdrawal Requests", "Add Channel", "Remove Channel",
         "Update Channel", "Broadcast Message", "Set Refer Reward", "Set Min Withdrawal",
-        "Set Welcome Bonus", "Withdraw ON/OFF", "UPI Withdraw ON/OFF", "VSV Withdraw ON/OFF",
+        "Set Welcome Bonus", "Set Daily Bonus", "Withdraw ON/OFF", "UPI Withdraw ON/OFF", "VSV Withdraw ON/OFF",
         "Manual Balance", "Approve Withdrawal", "Reject Withdrawal", "Create Gift Code",
         "Reset Database", "Confirm Reset Database", "Back To Menu"
     ]
@@ -666,6 +676,15 @@ async def handle_admin_action_input(update: Update, context: ContextTypes.DEFAUL
             val = float(text)
             await set_setting("welcome_bonus", str(val))
             await update.message.reply_text(f"✅ Welcome Bonus Set To Rs.{val}", reply_markup=get_admin_keyboard())
+        except:
+            await update.message.reply_text("⚠️ Send a valid number.")
+        context.user_data['admin_action'] = None
+
+    elif action == 'set_daily_bonus':
+        try:
+            val = float(text)
+            await set_setting("daily_bonus", str(val))
+            await update.message.reply_text(f"✅ Daily Bonus Set To Rs.{val}", reply_markup=get_admin_keyboard())
         except:
             await update.message.reply_text("⚠️ Send a valid number.")
         context.user_data['admin_action'] = None
@@ -880,6 +899,13 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE, 
             parse_mode="Markdown"
         )
 
+    elif text == "Set Daily Bonus":
+        current = await get_setting("daily_bonus", "1")
+        context.user_data['admin_action'] = 'set_daily_bonus'
+        await update.message.reply_text(
+            f"🎁 SET DAILY BONUS\n\nCurrent: Rs.{current}\n\nSend new amount:",
+        )
+
     elif text == "Withdraw ON/OFF":
         current = await get_setting("withdrawal_enabled", "1")
         new_val = "0" if current == "1" else "1"
@@ -999,8 +1025,8 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE, 
 async def handle_balance(update, user_id):
     async with turso_connect() as db:
         row = await (await db.execute("SELECT balance, referral_count FROM user_balance WHERE user_id = ?", (user_id,))).fetchone()
-    balance = row[0] if row else 0.0
-    refs = row[1] if row else 0
+    balance = float(row[0]) if row and row[0] is not None else 0.0
+    refs = int(row[1]) if row and row[1] is not None else 0
     await update.message.reply_text(
         f"💸 Balance: ₹{balance:.2f}\n\n"
         f"🎉 Use \'Withdraw\' Button to Withdraw The Balance!",
@@ -1419,7 +1445,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         target_uid = int(data.split("_")[-1])
         async with turso_connect() as db:
             row = await (await db.execute("SELECT balance, last_bonus_claim FROM user_balance WHERE user_id=?", (target_uid,))).fetchone()
-        balance = row[0] if row else 0.0
+        balance = float(row[0]) if row and row[0] is not None else 0.0
         last_bonus = row[1] if row else None
         now = datetime.utcnow().isoformat()
 
@@ -1433,13 +1459,14 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 return
 
-        new_balance = balance + 1.0
+        daily_bonus_amount = float(await get_setting("daily_bonus", "1"))
+        new_balance = float(balance) + daily_bonus_amount
         async with turso_connect() as db:
             await db.execute("UPDATE user_balance SET balance=?, last_bonus_claim=? WHERE user_id=?", (new_balance, now, target_uid))
             await db.commit()
         await query.message.reply_text(
             f"🎁 *DAILY BONUS CLAIMED!*\n\n"
-            f"💰 +RS.1.00 ADDED!\n"
+            f"💰 +RS.{daily_bonus_amount:.2f} ADDED!\n"
             f"💵 NEW BALANCE: RS.{new_balance:.2f}\n\n"
             f"Come back tomorrow for more! 🚀",
             parse_mode="Markdown"
@@ -1609,7 +1636,10 @@ async def verify_device(payload: VerifyRequest, request: Request):
         referrer_reward_amount = 0.0
 
         if was_verified == 0:
-            if welcome_bonus > 0:
+            # Only give welcome bonus if balance is exactly 0 (truly fresh)
+            cur_bal_row = await (await db.execute("SELECT balance FROM user_balance WHERE user_id=?", (user_id,))).fetchone()
+            cur_bal = float(cur_bal_row[0]) if cur_bal_row and cur_bal_row[0] is not None else 0.0
+            if welcome_bonus > 0 and cur_bal == 0.0:
                 await db.execute("UPDATE user_balance SET balance = balance + ? WHERE user_id=?", (welcome_bonus, user_id))
             await db.commit()
 
