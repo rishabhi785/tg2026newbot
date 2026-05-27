@@ -233,8 +233,8 @@ async def init_db():
         defaults = [
             ("refer_reward", "5"),
             ("min_withdrawal", "50"),
-            ("welcome_bonus", "10"),
-            ("daily_bonus", "1"),
+            ("welcome_bonus", "0"),   # Admin set karega, default 0 (no bonus)
+            ("daily_bonus", "0"),     # Admin set karega, default 0 (no bonus)
             ("withdrawal_enabled", "1"),
             ("redeem_code_price", "10"),
         ]
@@ -365,7 +365,11 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "INSERT OR IGNORE INTO users (user_id, username, first_name) VALUES (?, ?, ?)",
             (user.id, user.username, user.first_name)
         )
-        await db.execute("INSERT OR IGNORE INTO user_balance (user_id) VALUES (?)", (user.id,))
+        # Explicitly set balance=0 to avoid any default value issues
+        await db.execute(
+            "INSERT OR IGNORE INTO user_balance (user_id, balance) VALUES (?, 0.0)",
+            (user.id,)
+        )
         await db.commit()
 
     # Store referrer_id only for new users (bonus given after verification)
@@ -1262,7 +1266,7 @@ async def handle_leaderboard(update):
     rank_emojis = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "1️⃣1️⃣", "1️⃣2️⃣", "1️⃣3️⃣"]
 
     if not rows:
-        msg = "😍 TOP USERS WITH MOST REFERS\n\nAbhi koi data nahi hai!"
+        msg = "😍 TOP USERS WITH MOST REFERS\n\nNo data available yet!"
     else:
         msg = "😍 TOP USERS WITH MOST REFERS\n\n"
         for i, r in enumerate(rows):
@@ -1271,7 +1275,7 @@ async def handle_leaderboard(update):
             rank_emoji = rank_emojis[i] if i < len(rank_emojis) else f"{i+1}."
             msg += f"{rank_emoji} Top {i+1}:\nUser ID: {masked_id}\nVerified Refers: {r[1]}\n\n"
 
-    # callback query se aaya hai
+    # Check if called from callback query or message
     if hasattr(update, 'message') and update.message:
         await update.message.reply_text(msg)
     else:
@@ -1442,7 +1446,8 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ---- BONUS inline buttons ----
     elif data.startswith("bonus_daily_"):
-        target_uid = int(data.split("_")[-1])
+        # Ignore target_uid from callback data - always use actual caller's ID (security fix)
+        target_uid = user_id
         async with turso_connect() as db:
             row = await (await db.execute("SELECT balance, last_bonus_claim FROM user_balance WHERE user_id=?", (target_uid,))).fetchone()
         balance = float(row[0]) if row and row[0] is not None else 0.0
@@ -1459,7 +1464,16 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 return
 
-        daily_bonus_amount = float(await get_setting("daily_bonus", "1"))
+        daily_bonus_amount = float(await get_setting("daily_bonus", "0"))
+
+        # If admin has not set daily bonus (0), inform user
+        if daily_bonus_amount <= 0:
+            await query.message.reply_text(
+                "⏳ *DAILY BONUS*\n\nDaily bonus has not been set by admin yet.\nPlease check back later! 🙏",
+                parse_mode="Markdown"
+            )
+            return
+
         new_balance = float(balance) + daily_bonus_amount
         async with turso_connect() as db:
             await db.execute("UPDATE user_balance SET balance=?, last_bonus_claim=? WHERE user_id=?", (new_balance, now, target_uid))
@@ -1625,23 +1639,15 @@ async def verify_device(payload: VerifyRequest, request: Request):
         )
 
         existing_balance = await (await db.execute("SELECT balance FROM user_balance WHERE user_id=?", (user_id,))).fetchone()
-        welcome_bonus = float(await get_setting("welcome_bonus", "10"))
 
+        # Ensure balance row exists - insert with 0 only, do not touch existing row
         if not existing_balance:
-            await db.execute("INSERT OR IGNORE INTO user_balance (user_id, balance) VALUES (?,?)", (user_id, 0))
+            await db.execute("INSERT OR IGNORE INTO user_balance (user_id, balance) VALUES (?,?)", (user_id, 0.0))
             await db.commit()
 
-        # Give welcome bonus only once (first verification)
+        # No welcome bonus on verification - user earns balance only by claiming daily bonus
         referrer_to_notify = None
         referrer_reward_amount = 0.0
-
-        if was_verified == 0:
-            # Only give welcome bonus if balance is exactly 0 (truly fresh)
-            cur_bal_row = await (await db.execute("SELECT balance FROM user_balance WHERE user_id=?", (user_id,))).fetchone()
-            cur_bal = float(cur_bal_row[0]) if cur_bal_row and cur_bal_row[0] is not None else 0.0
-            if welcome_bonus > 0 and cur_bal == 0.0:
-                await db.execute("UPDATE user_balance SET balance = balance + ? WHERE user_id=?", (welcome_bonus, user_id))
-            await db.commit()
 
         await db.commit()
 
@@ -1657,6 +1663,11 @@ async def verify_device(payload: VerifyRequest, request: Request):
             referrer_id_val = int(referrer_row[0])
             refer_reward = float(await get_setting("refer_reward", "5"))
             async with turso_connect() as db3:
+                # Ensure referrer's balance row exists (works for admin too)
+                await db3.execute(
+                    "INSERT OR IGNORE INTO user_balance (user_id, balance) VALUES (?, 0.0)",
+                    (referrer_id_val,)
+                )
                 await db3.execute(
                     "UPDATE user_balance SET balance = balance + ?, referral_count = referral_count + 1 WHERE user_id=?",
                     (refer_reward, referrer_id_val)
