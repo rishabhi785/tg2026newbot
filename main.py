@@ -77,13 +77,12 @@ class TursoConnection:
             return
         stmts = self._stmts[:]
         self._stmts = []
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                TURSO_HTTP_URL,
-                headers={"Authorization": f"Bearer {TURSO_TOKEN}", "Content-Type": "application/json"},
-                json={"requests": stmts},
-                timeout=15
-            )
+        client = await get_http_client()
+        resp = await client.post(
+            TURSO_HTTP_URL,
+            headers={"Authorization": f"Bearer {TURSO_TOKEN}", "Content-Type": "application/json"},
+            json={"requests": stmts},
+        )
         data = resp.json()
         results = data.get("results", [])
         if results:
@@ -140,6 +139,15 @@ VSV_API_URL = "https://vsv-gateway-solutions.co.in/Api/api.php"
 VSV_TOKEN = "RTCLFTJV"
 
 bot_app_global = None
+
+# Shared HTTP client - ek hi client reuse hoga, har baar naya nahi banega
+_http_client: httpx.AsyncClient = None
+
+async def get_http_client() -> httpx.AsyncClient:
+    global _http_client
+    if _http_client is None or _http_client.is_closed:
+        _http_client = httpx.AsyncClient(timeout=15)
+    return _http_client
 
 # ===================== DATABASE =====================
 
@@ -350,10 +358,14 @@ async def send_join_message(update, user_id: int, bot=None):
         "⚪️ Join The Channels Below To Continue\n\n"
         "😍 After Joining Click Claim"
     )
-    if hasattr(update, 'message') and update.message:
-        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
-    elif hasattr(update, 'edit_message_text'):
-        await update.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+    try:
+        if hasattr(update, 'message') and update.message:
+            await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+        elif hasattr(update, 'edit_message_text'):
+            await update.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+    except Exception as e:
+        # Forbidden: user ne bot ko start nahi kiya - silently ignore
+        logger.warning(f"send_join_message failed (user may not have started bot): {e}")
 
 
 def get_user_keyboard(user_id: int):
@@ -416,43 +428,30 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except:
             pass
 
-    # Check existing user separately first
-    async with turso_connect() as dbcheck:
-        existing_row = await (await dbcheck.execute("SELECT user_id FROM users WHERE user_id=?", (user.id,))).fetchone()
-    is_new_user = existing_row is None
-
+    # OPTIMIZED: Saare DB checks ek hi connection mein (5 connections → 1)
     async with turso_connect() as db:
+        existing_row = await (await db.execute("SELECT user_id, is_verified FROM users WHERE user_id=?", (user.id,))).fetchone()
+        is_new_user = existing_row is None
+        is_verified = int(existing_row[1]) if existing_row and existing_row[1] is not None else 0
+
         await db.execute(
             "INSERT OR IGNORE INTO users (user_id, username, first_name) VALUES (?, ?, ?)",
             (user.id, user.username, user.first_name)
         )
-        # Explicitly set balance=0 to avoid any default value issues
         await db.execute(
             "INSERT OR IGNORE INTO user_balance (user_id, balance) VALUES (?, 0.0)",
             (user.id,)
         )
+        if is_new_user and referrer_id:
+            await db.execute("DELETE FROM bot_settings WHERE key=?", (f"pending_referrer_{user.id}",))
+            await db.execute("INSERT INTO bot_settings (key, value) VALUES (?, ?)", (f"pending_referrer_{user.id}", str(referrer_id)))
+        if user.id == ADMIN_ID:
+            await db.execute("UPDATE users SET is_verified=1 WHERE user_id=?", (user.id,))
+            is_verified = 1
         await db.commit()
-
-    # Store referrer_id only for new users (bonus given after verification)
-    if is_new_user and referrer_id:
-        async with turso_connect() as dbref:
-            # Delete any existing pending referrer first, then insert fresh
-            await dbref.execute("DELETE FROM bot_settings WHERE key=?", (f"pending_referrer_{user.id}",))
-            await dbref.execute("INSERT INTO bot_settings (key, value) VALUES (?, ?)", (f"pending_referrer_{user.id}", str(referrer_id)))
-            await dbref.commit()
-
-    async with turso_connect() as dbv:
-        row = await (await dbv.execute("SELECT is_verified FROM users WHERE user_id = ?", (user.id,))).fetchone()
-        is_verified = int(row[0]) if row and row[0] is not None else 0
 
     # ADMIN BYPASS - Admin always gets main menu directly
     if user.id == ADMIN_ID:
-        # Mark admin as verified so all balance operations work correctly
-        async with turso_connect() as dbadmin:
-            await dbadmin.execute(
-                "UPDATE users SET is_verified=1 WHERE user_id=?", (user.id,)
-            )
-            await dbadmin.commit()
         await send_main_menu(update, user.first_name, user.id)
         return
 
@@ -1884,9 +1883,14 @@ def validate_telegram_init_data(init_data: str, bot_token: str):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global _http_client
+    _http_client = httpx.AsyncClient(timeout=15)
     await init_db()
     await run_bot()
     yield
+    # Cleanup on shutdown
+    if _http_client and not _http_client.is_closed:
+        await _http_client.aclose()
 
 app = FastAPI(lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
