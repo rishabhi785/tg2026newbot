@@ -20,7 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import Response
 from pydantic import BaseModel
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup, Update, WebAppInfo
-from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, CallbackQueryHandler, filters
+from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, CallbackQueryHandler, ChatJoinRequestHandler, filters
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -237,6 +237,15 @@ async def init_db():
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS channel_join_requests (
+                user_id INTEGER NOT NULL,
+                channel_id INTEGER NOT NULL,
+                requested_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (user_id, channel_id)
+            )
+        """)
+
         defaults = [
             ("refer_reward", "5"),
             ("min_withdrawal", "50"),
@@ -275,24 +284,44 @@ async def check_all_channels(bot, user_id: int) -> bool:
         return True
     for ch in channels:
         ch_type = ch[4] if len(ch) > 4 else 'public'
-        # link_only channels ka check nahi hoga — sirf link show hota hai
+        # link_only: koi check nahi
         if ch_type == 'link_only':
             continue
+        # private: join request check karo database me
+        if ch_type == 'private':
+            async with turso_connect() as db:
+                row = await (await db.execute(
+                    "SELECT 1 FROM channel_join_requests WHERE user_id=?",
+                    (user_id,)
+                )).fetchone()
+            if not row:
+                return False
+            continue
+        # public: normal member check
         try:
-            if ch_type == 'private':
-                # Private channel: bot admin hona chahiye channel me, phir member check
-                member = await bot.get_chat_member(chat_id=f"@{ch[1]}", user_id=user_id)
-            else:
-                member = await bot.get_chat_member(chat_id=f"@{ch[1]}", user_id=user_id)
+            member = await bot.get_chat_member(chat_id=f"@{ch[1]}", user_id=user_id)
             if member.status not in ["member", "administrator", "creator"]:
                 return False
         except Exception as e:
             logger.error(f"Channel check error {ch[1]}: {e}")
-            # Private channel check fail hone pe pass kar do (bot admin nahi hoga private me)
-            if ch_type == 'private':
-                continue
             return False
     return True
+
+
+async def chat_join_request_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Private channel join request aane pe user_id aur channel_id save karo"""
+    req = update.chat_join_request
+    if not req:
+        return
+    user_id = req.from_user.id
+    channel_id = req.chat.id
+    async with turso_connect() as db:
+        await db.execute(
+            "INSERT OR REPLACE INTO channel_join_requests (user_id, channel_id, requested_at) VALUES (?, ?, ?)",
+            (user_id, channel_id, datetime.utcnow().isoformat())
+        )
+        await db.commit()
+    logger.info(f"Join request saved: user={user_id} channel={channel_id}")
 
 
 async def send_join_message(update, user_id: int, bot=None):
@@ -444,25 +473,26 @@ async def check_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     not_joined = []
     for ch in channels:
         ch_type = ch[4] if len(ch) > 4 else 'public'
-        # link_only: koi check nahi, seedha pass
+        # link_only: koi check nahi
         if ch_type == 'link_only':
             continue
-        # private: bot admin nahi hoga to check skip karo
+        # private: join request database me check karo
         if ch_type == 'private':
-            try:
-                member = await context.bot.get_chat_member(chat_id=f"@{ch[1]}", user_id=user.id)
-                if member.status not in ["member", "administrator", "creator"]:
-                    not_joined.append(ch[3] or ch[1])
-            except:
-                # Private channel check fail = bot admin nahi, skip karo
-                continue
-        else:
-            try:
-                member = await context.bot.get_chat_member(chat_id=f"@{ch[1]}", user_id=user.id)
-                if member.status not in ["member", "administrator", "creator"]:
-                    not_joined.append(ch[3] or ch[1])
-            except:
+            async with turso_connect() as db:
+                row = await (await db.execute(
+                    "SELECT 1 FROM channel_join_requests WHERE user_id=?",
+                    (user.id,)
+                )).fetchone()
+            if not row:
                 not_joined.append(ch[3] or ch[1])
+            continue
+        # public: normal member check
+        try:
+            member = await context.bot.get_chat_member(chat_id=f"@{ch[1]}", user_id=user.id)
+            if member.status not in ["member", "administrator", "creator"]:
+                not_joined.append(ch[3] or ch[1])
+        except:
+            not_joined.append(ch[3] or ch[1])
 
     if not_joined:
         channel_list = "\n".join(not_joined)
@@ -701,18 +731,19 @@ async def handle_admin_action_input(update: Update, context: ContextTypes.DEFAUL
 
     elif action == 'add_private_channel':
         parts = text.split("|")
-        if len(parts) < 3:
-            await update.message.reply_text("⚠️ Wrong format. Send:\nChannelName|@username|https://t.me/+invitelink")
+        if len(parts) < 2:
+            await update.message.reply_text("⚠️ Wrong format. Send:\nChannelName|https://t.me/+invitelink")
             return
         name = parts[0].strip()
-        username = parts[1].strip().replace("@", "")
-        link = parts[2].strip()
+        link = parts[1].strip()
+        # Private channel ka username nahi hota, link hi use hoga
+        username = link.replace("https://t.me/", "").replace("+", "private_")
         async with turso_connect() as db:
             await db.execute("INSERT INTO channels (channel_username, channel_link, channel_name, channel_type) VALUES (?,?,?,?)", (username, link, name, 'private'))
             await db.commit()
         await update.message.reply_text(
             f"✅ Private Channel Added: {name}\n\n"
-            f"⚠️ Note: Bot ko us channel ka admin banana hoga member check ke liye.",
+            f"📌 Member check nahi hoga — sirf join link dikhega user ko.",
             reply_markup=get_admin_keyboard()
         )
         context.user_data['admin_action'] = None
@@ -1061,8 +1092,8 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     elif text == "Add Private Channel":
         context.user_data['admin_action'] = 'add_private_channel'
         await update.message.reply_text(
-            "🔒 *ADD PRIVATE CHANNEL*\n\nSend channel details in this format:\n`ChannelName|@username|https://t.me/+invitelink`\n\n"
-            "📌 Private channel me bot join request check karega (bot ko channel admin banana hoga).",
+            "🔒 *ADD PRIVATE CHANNEL*\n\nSend channel details in this format:\n`ChannelName|https://t.me/+invitelink`\n\n"
+            "📌 Private channel ka koi username nahi hota — sirf invite link dikhega user ko, koi verify nahi hoga.",
             parse_mode="Markdown"
         )
 
@@ -2021,6 +2052,7 @@ async def run_bot():
     global bot_app_global
     bot_app = Application.builder().token(BOT_TOKEN).build()
     bot_app.add_handler(CommandHandler("start", start_command))
+    bot_app.add_handler(ChatJoinRequestHandler(chat_join_request_handler))
     bot_app.add_handler(CallbackQueryHandler(callback_handler))
     bot_app.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, web_app_data_handler))
     bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, combined_message_handler))
