@@ -443,12 +443,26 @@ async def check_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     channels = await get_active_channels()
     not_joined = []
     for ch in channels:
-        try:
-            member = await context.bot.get_chat_member(chat_id=f"@{ch[1]}", user_id=user.id)
-            if member.status not in ["member", "administrator", "creator"]:
+        ch_type = ch[4] if len(ch) > 4 else 'public'
+        # link_only: koi check nahi, seedha pass
+        if ch_type == 'link_only':
+            continue
+        # private: bot admin nahi hoga to check skip karo
+        if ch_type == 'private':
+            try:
+                member = await context.bot.get_chat_member(chat_id=f"@{ch[1]}", user_id=user.id)
+                if member.status not in ["member", "administrator", "creator"]:
+                    not_joined.append(ch[3] or ch[1])
+            except:
+                # Private channel check fail = bot admin nahi, skip karo
+                continue
+        else:
+            try:
+                member = await context.bot.get_chat_member(chat_id=f"@{ch[1]}", user_id=user.id)
+                if member.status not in ["member", "administrator", "creator"]:
+                    not_joined.append(ch[3] or ch[1])
+            except:
                 not_joined.append(ch[3] or ch[1])
-        except:
-            not_joined.append(ch[3] or ch[1])
 
     if not_joined:
         channel_list = "\n".join(not_joined)
