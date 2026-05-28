@@ -200,9 +200,14 @@ async def init_db():
                 added_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        # Migration: purane table me channel_type column nahi hoga to add karo
+        # Migration: purane table me columns nahi honge to add karo
         try:
             await db.execute("ALTER TABLE channels ADD COLUMN channel_type TEXT DEFAULT 'public'")
+            await db.commit()
+        except:
+            pass
+        try:
+            await db.execute("ALTER TABLE channels ADD COLUMN chat_id INTEGER DEFAULT NULL")
             await db.commit()
         except:
             pass
@@ -274,7 +279,7 @@ async def set_setting(key: str, value: str):
 
 async def get_active_channels():
     async with turso_connect() as db:
-        rows = await (await db.execute("SELECT id, channel_username, channel_link, channel_name, channel_type FROM channels WHERE is_active = 1")).fetchall()
+        rows = await (await db.execute("SELECT id, channel_username, channel_link, channel_name, channel_type, chat_id FROM channels WHERE is_active = 1")).fetchall()
     return rows
 
 
@@ -287,14 +292,17 @@ async def check_all_channels(bot, user_id: int) -> bool:
         # link_only: koi check nahi
         if ch_type == 'link_only':
             continue
-        # private: join request check karo database me
+        # private: getChatMember with chat_id se check karo
         if ch_type == 'private':
-            async with turso_connect() as db:
-                row = await (await db.execute(
-                    "SELECT 1 FROM channel_join_requests WHERE user_id=?",
-                    (user_id,)
-                )).fetchone()
-            if not row:
+            chat_id = ch[5] if len(ch) > 5 else None
+            if not chat_id:
+                continue
+            try:
+                member = await bot.get_chat_member(chat_id=chat_id, user_id=user_id)
+                if member.status not in ["member", "administrator", "creator"]:
+                    return False
+            except Exception as e:
+                logger.error(f"Private channel check error: {e}")
                 return False
             continue
         # public: normal member check
@@ -476,14 +484,17 @@ async def check_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         # link_only: koi check nahi
         if ch_type == 'link_only':
             continue
-        # private: join request database me check karo
+        # private: getChatMember with chat_id se check karo
         if ch_type == 'private':
-            async with turso_connect() as db:
-                row = await (await db.execute(
-                    "SELECT 1 FROM channel_join_requests WHERE user_id=?",
-                    (user.id,)
-                )).fetchone()
-            if not row:
+            chat_id = ch[5] if len(ch) > 5 else None
+            if not chat_id:
+                continue
+            try:
+                member = await context.bot.get_chat_member(chat_id=chat_id, user_id=user.id)
+                if member.status not in ["member", "administrator", "creator"]:
+                    not_joined.append(ch[3] or ch[1])
+            except Exception as e:
+                logger.error(f"Private channel check error: {e}")
                 not_joined.append(ch[3] or ch[1])
             continue
         # public: normal member check
@@ -731,19 +742,29 @@ async def handle_admin_action_input(update: Update, context: ContextTypes.DEFAUL
 
     elif action == 'add_private_channel':
         parts = text.split("|")
-        if len(parts) < 2:
-            await update.message.reply_text("⚠️ Wrong format. Send:\nChannelName|https://t.me/+invitelink")
+        if len(parts) < 3:
+            await update.message.reply_text("⚠️ Wrong format. Send:\nChannelName|-1001234567890|https://t.me/+invitelink\n\nChatID @userinfobot se milega.")
             return
         name = parts[0].strip()
-        link = parts[1].strip()
-        # Private channel ka username nahi hota, link hi use hoga
-        username = link.replace("https://t.me/", "").replace("+", "private_")
+        chat_id_str = parts[1].strip()
+        link = parts[2].strip()
+        try:
+            chat_id = int(chat_id_str)
+        except:
+            await update.message.reply_text("⚠️ ChatID galat hai. Example: -1001234567890")
+            return
+        username = f"private_{abs(chat_id)}"
         async with turso_connect() as db:
-            await db.execute("INSERT INTO channels (channel_username, channel_link, channel_name, channel_type) VALUES (?,?,?,?)", (username, link, name, 'private'))
+            await db.execute(
+                "INSERT INTO channels (channel_username, channel_link, channel_name, channel_type, chat_id) VALUES (?,?,?,?,?)",
+                (username, link, name, 'private', chat_id)
+            )
             await db.commit()
         await update.message.reply_text(
             f"✅ Private Channel Added: {name}\n\n"
-            f"📌 Member check nahi hoga — sirf join link dikhega user ko.",
+            f"📌 ChatID: `{chat_id}`\n"
+            f"Bot member check karega — user channel leave kare to aage nahi badh sakta.",
+            parse_mode="Markdown",
             reply_markup=get_admin_keyboard()
         )
         context.user_data['admin_action'] = None
@@ -1092,8 +1113,11 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     elif text == "Add Private Channel":
         context.user_data['admin_action'] = 'add_private_channel'
         await update.message.reply_text(
-            "🔒 *ADD PRIVATE CHANNEL*\n\nSend channel details in this format:\n`ChannelName|https://t.me/+invitelink`\n\n"
-            "📌 Private channel ka koi username nahi hota — sirf invite link dikhega user ko, koi verify nahi hoga.",
+            "🔒 *ADD PRIVATE CHANNEL*\n\nSend channel details in this format:\n`ChannelName|-1001234567890|https://t.me/+invitelink`\n\n"
+            "📌 ChatID @userinfobot se pata karo:\n"
+            "1. Channel me koi message bhejo\n"
+            "2. Wo message @userinfobot ko forward karo\n"
+            "3. Forwarded chat ID copy karo",
             parse_mode="Markdown"
         )
 
