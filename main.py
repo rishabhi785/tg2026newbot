@@ -196,9 +196,16 @@ async def init_db():
                 channel_link TEXT NOT NULL,
                 channel_name TEXT,
                 is_active INTEGER DEFAULT 1,
+                channel_type TEXT DEFAULT 'public',
                 added_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        # Migration: purane table me channel_type column nahi hoga to add karo
+        try:
+            await db.execute("ALTER TABLE channels ADD COLUMN channel_type TEXT DEFAULT 'public'")
+            await db.commit()
+        except:
+            pass
         await db.execute("""
             CREATE TABLE IF NOT EXISTS bot_settings (
                 key TEXT PRIMARY KEY,
@@ -258,7 +265,7 @@ async def set_setting(key: str, value: str):
 
 async def get_active_channels():
     async with turso_connect() as db:
-        rows = await (await db.execute("SELECT id, channel_username, channel_link, channel_name FROM channels WHERE is_active = 1")).fetchall()
+        rows = await (await db.execute("SELECT id, channel_username, channel_link, channel_name, channel_type FROM channels WHERE is_active = 1")).fetchall()
     return rows
 
 
@@ -267,12 +274,23 @@ async def check_all_channels(bot, user_id: int) -> bool:
     if not channels:
         return True
     for ch in channels:
+        ch_type = ch[4] if len(ch) > 4 else 'public'
+        # link_only channels ka check nahi hoga — sirf link show hota hai
+        if ch_type == 'link_only':
+            continue
         try:
-            member = await bot.get_chat_member(chat_id=f"@{ch[1]}", user_id=user_id)
+            if ch_type == 'private':
+                # Private channel: bot admin hona chahiye channel me, phir member check
+                member = await bot.get_chat_member(chat_id=f"@{ch[1]}", user_id=user_id)
+            else:
+                member = await bot.get_chat_member(chat_id=f"@{ch[1]}", user_id=user_id)
             if member.status not in ["member", "administrator", "creator"]:
                 return False
         except Exception as e:
             logger.error(f"Channel check error {ch[1]}: {e}")
+            # Private channel check fail hone pe pass kar do (bot admin nahi hoga private me)
+            if ch_type == 'private':
+                continue
             return False
     return True
 
@@ -316,7 +334,8 @@ def get_user_keyboard(user_id: int):
 def get_admin_keyboard():
     rows = [
         [KeyboardButton("Total Users"), KeyboardButton("Withdrawal Requests")],
-        [KeyboardButton("Add Channel"), KeyboardButton("Remove Channel")],
+        [KeyboardButton("Add Channel"), KeyboardButton("Add Private Channel"), KeyboardButton("Add Link Only")],
+        [KeyboardButton("Remove Channel")],
         [KeyboardButton("Update Channel"), KeyboardButton("Broadcast Message")],
         [KeyboardButton("Set Refer Reward"), KeyboardButton("Set Min Withdrawal")],
         [KeyboardButton("Set Daily Bonus")],
@@ -507,7 +526,7 @@ async def combined_message_handler(update: Update, context: ContextTypes.DEFAULT
 
     # Admin panel buttons list (must match get_admin_keyboard exactly)
     admin_buttons = [
-        "Total Users", "Withdrawal Requests", "Add Channel", "Remove Channel",
+        "Total Users", "Withdrawal Requests", "Add Channel", "Add Private Channel", "Add Link Only", "Remove Channel",
         "Update Channel", "Broadcast Message", "Set Refer Reward", "Set Min Withdrawal",
         "Set Daily Bonus", "Withdraw ON/OFF", "UPI Withdraw ON/OFF", "VSV Withdraw ON/OFF",
         "Manual Balance", "Approve Withdrawal", "Reject Withdrawal", "Create Gift Code",
@@ -661,9 +680,45 @@ async def handle_admin_action_input(update: Update, context: ContextTypes.DEFAUL
         username = parts[1].strip().replace("@", "")
         link = parts[2].strip() if len(parts) > 2 else f"https://t.me/{username}"
         async with turso_connect() as db:
-            await db.execute("INSERT INTO channels (channel_username, channel_link, channel_name) VALUES (?,?,?)", (username, link, name))
+            await db.execute("INSERT INTO channels (channel_username, channel_link, channel_name, channel_type) VALUES (?,?,?,?)", (username, link, name, 'public'))
             await db.commit()
-        await update.message.reply_text(f"✅ Channel Added: {name}", reply_markup=get_admin_keyboard())
+        await update.message.reply_text(f"✅ Public Channel Added: {name}", reply_markup=get_admin_keyboard())
+        context.user_data['admin_action'] = None
+
+    elif action == 'add_private_channel':
+        parts = text.split("|")
+        if len(parts) < 3:
+            await update.message.reply_text("⚠️ Wrong format. Send:\nChannelName|@username|https://t.me/+invitelink")
+            return
+        name = parts[0].strip()
+        username = parts[1].strip().replace("@", "")
+        link = parts[2].strip()
+        async with turso_connect() as db:
+            await db.execute("INSERT INTO channels (channel_username, channel_link, channel_name, channel_type) VALUES (?,?,?,?)", (username, link, name, 'private'))
+            await db.commit()
+        await update.message.reply_text(
+            f"✅ Private Channel Added: {name}\n\n"
+            f"⚠️ Note: Bot ko us channel ka admin banana hoga member check ke liye.",
+            reply_markup=get_admin_keyboard()
+        )
+        context.user_data['admin_action'] = None
+
+    elif action == 'add_link_only':
+        parts = text.split("|")
+        if len(parts) < 3:
+            await update.message.reply_text("⚠️ Wrong format. Send:\nName|dummy|https://koi-bhi-link.com")
+            return
+        name = parts[0].strip()
+        username = parts[1].strip().replace("@", "")
+        link = parts[2].strip()
+        async with turso_connect() as db:
+            await db.execute("INSERT INTO channels (channel_username, channel_link, channel_name, channel_type) VALUES (?,?,?,?)", (username, link, name, 'link_only'))
+            await db.commit()
+        await update.message.reply_text(
+            f"✅ Link Only Added: {name}\n\n"
+            f"📌 Koi verify nahi hoga — sirf link show hoga user ko.",
+            reply_markup=get_admin_keyboard()
+        )
         context.user_data['admin_action'] = None
 
     elif action == 'remove_channel':
@@ -984,7 +1039,24 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     elif text == "Add Channel":
         context.user_data['admin_action'] = 'add_channel'
         await update.message.reply_text(
-            "➕ *ADD CHANNEL*\n\nSend channel details in this format:\n`ChannelName|@username|https://t.me/link`",
+            "➕ *ADD PUBLIC CHANNEL*\n\nSend channel details in this format:\n`ChannelName|@username|https://t.me/link`\n\n"
+            "📌 Public channel me bot member check karega.",
+            parse_mode="Markdown"
+        )
+
+    elif text == "Add Private Channel":
+        context.user_data['admin_action'] = 'add_private_channel'
+        await update.message.reply_text(
+            "🔒 *ADD PRIVATE CHANNEL*\n\nSend channel details in this format:\n`ChannelName|@username|https://t.me/+invitelink`\n\n"
+            "📌 Private channel me bot join request check karega (bot ko channel admin banana hoga).",
+            parse_mode="Markdown"
+        )
+
+    elif text == "Add Link Only":
+        context.user_data['admin_action'] = 'add_link_only'
+        await update.message.reply_text(
+            "🔗 *ADD LINK ONLY*\n\nSend details in this format:\n`Name|dummy|https://koi-bhi-link.com`\n\n"
+            "📌 Is type me bot koi bhi verify nahi karega — sirf link show hoga user ko.",
             parse_mode="Markdown"
         )
 
