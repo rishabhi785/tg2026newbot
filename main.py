@@ -352,7 +352,7 @@ async def send_join_message(update, user_id: int, bot=None):
             row = []
     if row:
         keyboard.append(row)
-    keyboard.append([InlineKeyboardButton("✅ Claim Reward", callback_data="check_join")])
+    keyboard.append([InlineKeyboardButton("🔒CLAIM", callback_data="check_join")])
     text = (
         "👑 Hey There! Welcome To Bot!!\n\n"
         "⚪️ Join The Channels Below To Continue\n\n"
