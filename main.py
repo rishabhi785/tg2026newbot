@@ -503,17 +503,26 @@ async def check_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
             not_joined.append(ch[3] or ch[1])
 
     if not_joined:
-        channel_list = "\n".join(not_joined)
-        await query.answer(
-            f"🚫 You Didn't Join These Channels 👇\n{channel_list}",
-            show_alert=True
+        await query.answer()
+        sent = await query.message.reply_text(
+            "🤦 YOU DIDN'T JOIN ALL CHANNELS 🙆"
         )
+        # Message ID save karo taaki baad mein delete ho sake
+        context.user_data["not_joined_msg_id"] = sent.message_id
         return
     is_member = True
 
     async with turso_connect() as db:
         row = await (await db.execute("SELECT is_verified FROM users WHERE user_id = ?", (user.id,))).fetchone()
         is_verified = int(row[0]) if row and row[0] is not None else 0
+
+    # Pehle "didn't join" wala message delete karo agar tha
+    not_joined_msg_id = context.user_data.pop("not_joined_msg_id", None)
+    if not_joined_msg_id:
+        try:
+            await context.bot.delete_message(chat_id=user.id, message_id=not_joined_msg_id)
+        except:
+            pass
 
     if is_verified == 1:
         # Already verified - show main menu directly, no extra message
