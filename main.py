@@ -352,7 +352,7 @@ async def send_join_message(update, user_id: int, bot=None):
             row = []
     if row:
         keyboard.append(row)
-    keyboard.append([InlineKeyboardButton("CLAIM 🔒", callback_data="check_join")])
+    keyboard.append([InlineKeyboardButton("✅ Claim Reward", callback_data="check_join")])
     text = (
         "👑 Hey There! Welcome To Bot!!\n\n"
         "⚪️ Join The Channels Below To Continue\n\n"
@@ -1410,11 +1410,7 @@ async def handle_withdraw(update, user_id, context):
         bal_str = f"{balance:.2f}".replace(".", "\\.")
         min_str = f"{min_withdrawal:.0f}".replace(".", "\\.")
         await update.message.reply_text(
-            f"*INSUFFICIENT BALANCE*\n\n"
-            f"💵 Your Balance: Rs\\.{bal_str}\n"
-            f"🔻 Minimum Withdrawal: Rs\\.{min_str}\n\n"
-            f"Refer more users to increase your balance\\!",
-            parse_mode="MarkdownV2"
+            f"😵 INSUFFICIENT BALANCE — Minimum Withdrawal Is Rs.{min_withdrawal:.0f}"
         )
         return
 
