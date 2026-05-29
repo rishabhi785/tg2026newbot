@@ -504,11 +504,17 @@ async def check_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     if not_joined:
         await query.answer()
+        # Pehle saare purane "didn't join" messages delete karo
+        for old_msg_id in context.user_data.get("not_joined_msg_ids", []):
+            try:
+                await context.bot.delete_message(chat_id=user.id, message_id=old_msg_id)
+            except:
+                pass
+        # Sirf ek naya message bhejo
         sent = await query.message.reply_text(
-            "🤦 YOU DIDN'T JOIN ALL CHANNELS 🙆"
+            "🙆 YOU DIDN'T JOIN ALL CHANNELS"
         )
-        # Message ID save karo taaki baad mein delete ho sake
-        context.user_data["not_joined_msg_id"] = sent.message_id
+        context.user_data["not_joined_msg_ids"] = [sent.message_id]
         return
     is_member = True
 
@@ -516,11 +522,10 @@ async def check_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         row = await (await db.execute("SELECT is_verified FROM users WHERE user_id = ?", (user.id,))).fetchone()
         is_verified = int(row[0]) if row and row[0] is not None else 0
 
-    # Pehle "didn't join" wala message delete karo agar tha
-    not_joined_msg_id = context.user_data.pop("not_joined_msg_id", None)
-    if not_joined_msg_id:
+    # Saare "didn't join" messages delete karo
+    for old_msg_id in context.user_data.pop("not_joined_msg_ids", []):
         try:
-            await context.bot.delete_message(chat_id=user.id, message_id=not_joined_msg_id)
+            await context.bot.delete_message(chat_id=user.id, message_id=old_msg_id)
         except:
             pass
 
