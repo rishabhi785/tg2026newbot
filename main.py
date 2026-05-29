@@ -400,9 +400,7 @@ def get_admin_keyboard():
 
 async def send_main_menu(update: Update, name: str, user_id: int):
     await update.message.reply_text(
-        f"🏡 *Welcome To UPI Giveaway Bot!*\n\n"
-        f"Earn money easily and redeem code 💸\n\n"
-        f"👋 Hello, *{name}*! Use the buttons below to navigate:",
+        f"😍 Welcome, *{name}*!\n\n💸 Earn Money • Refer Friends • Withdraw Instantly\n\n👇 Use button below to get started",
         reply_markup=get_user_keyboard(user_id),
         parse_mode="Markdown"
     )
@@ -466,7 +464,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = [[InlineKeyboardButton("🔐 Verify Device", web_app=WebAppInfo(url=WEBAPP_URL))]]
         await update.message.reply_text(
             "🔐 Verify Yourself To Start Bot\n\n"
-            "🛡️ *Verify your self*",
+            "🔒 *Verify Yourself*",
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode="Markdown"
         )
@@ -524,9 +522,7 @@ async def check_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         except:
             pass
         await query.message.reply_text(
-            f"🏡 *Welcome To UPI Giveaway Bot!*\n\n"
-            f"Earn money easily and redeem code 💸\n\n"
-            f"👋 Hello, *{user.first_name}*! Use the buttons below to navigate:",
+            f"😍 Welcome, *{user.first_name}*!\n\n💸 Earn Money • Refer Friends • Withdraw Instantly\n\n👇 Use button below to get started",
             reply_markup=get_user_keyboard(user.id),
             parse_mode="Markdown"
         )
@@ -534,7 +530,7 @@ async def check_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         # T3: No "channels joined" message - directly show verify button
         keyboard = [[InlineKeyboardButton("🔐 Verify Device", web_app=WebAppInfo(url=WEBAPP_URL))]]
         await query.edit_message_text(
-            "🛡️ *Verify your self*",
+            "🔒 *Verify Yourself*",
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode="Markdown"
         )
@@ -637,7 +633,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             keyboard = [[InlineKeyboardButton("🔐 Verify Device", web_app=WebAppInfo(url=WEBAPP_URL))]]
             await update.message.reply_text(
                 "🔐 Verify Yourself To Start Bot\n\n"
-                "🛡️ *Verify your self*",
+                "🔒 *Verify Yourself*",
                 reply_markup=InlineKeyboardMarkup(keyboard),
                 parse_mode="Markdown"
             )
@@ -2038,15 +2034,16 @@ async def verify_device(payload: VerifyRequest, request: Request):
     first_name = user_data.get("first_name", "User")
     try:
         keyboard = get_user_keyboard(user_id)
-        welcome_text = (
-            "✅ *DEVICE VERIFIED SUCCESSFULLY!*\n\n"
-            "🏡 *WELCOME TO UPI GIVEAWAY BOT!*\n\n"
-            "Earn money easily and redeem code 💸\n\n"
-            f"👋 Hello, *{first_name}*! Use the buttons below to navigate:"
-        )
+        # Message 1: Verification success (alag)
         await bot_app_global.bot.send_message(
             chat_id=user_id,
-            text=welcome_text,
+            text="✅ *Device Verified Successfully!*",
+            parse_mode="Markdown"
+        )
+        # Message 2: Welcome with keyboard
+        await bot_app_global.bot.send_message(
+            chat_id=user_id,
+            text=f"😍 Welcome, *{first_name}*!\n\n💸 Earn Money • Refer Friends • Withdraw Instantly\n\n👇 Use button below to get started",
             parse_mode="Markdown",
             reply_markup=keyboard
         )
