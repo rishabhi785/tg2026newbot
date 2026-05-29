@@ -650,7 +650,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif text == "Link UPI":
         context.user_data['waiting_for'] = 'upi'
         await update.message.reply_text(
-            "🏦 *LINK UPI ID*\n\nSend your UPI ID\nExample: `name@upi`",
+            "🟢 *LINK UPI ID* — Send your UPI ID _(eg. name@upi)_",
             parse_mode="Markdown"
         )
     elif text == "Link VSV Wallet":
