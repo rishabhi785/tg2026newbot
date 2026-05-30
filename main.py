@@ -470,13 +470,17 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if is_new_user and referrer_id:
             await db.execute("DELETE FROM bot_settings WHERE key=?", (f"pending_referrer_{user.id}",))
             await db.execute("INSERT INTO bot_settings (key, value) VALUES (?, ?)", (f"pending_referrer_{user.id}", str(referrer_id)))
-        if user.id == ADMIN_ID:
+        if await is_admin(user.id):
             await db.execute("UPDATE users SET is_verified=1 WHERE user_id=?", (user.id,))
             is_verified = 1
         await db.commit()
 
-    # ADMIN BYPASS - Admin always gets main menu directly
-    if user.id == ADMIN_ID:
+    # ADMIN / CO-ADMIN BYPASS - Direct main menu
+    if await is_admin(user.id):
+        # Mark as verified bhi kar do
+        async with turso_connect() as dbadmin:
+            await dbadmin.execute("UPDATE users SET is_verified=1 WHERE user_id=?", (user.id,))
+            await dbadmin.commit()
         await send_main_menu(update, user.first_name, user.id)
         return
 
@@ -564,7 +568,7 @@ async def check_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
             pass
         await query.message.reply_text(
             f"😍 Welcome, *{user.first_name}*!\n\n💸 Earn Money • Refer Friends • Withdraw Instantly\n\n👇 Use button below to get started",
-            reply_markup=get_user_keyboard(user.id),
+            reply_markup=await get_user_keyboard_async(user.id),
             parse_mode="Markdown"
         )
     else:
