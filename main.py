@@ -390,6 +390,8 @@ def get_admin_keyboard():
         [KeyboardButton("Set Daily Bonus")],
         [KeyboardButton("Withdraw ON/OFF"), KeyboardButton("UPI Withdraw ON/OFF")],
         [KeyboardButton("VSV Withdraw ON/OFF"), KeyboardButton("Manual Balance")],
+        [KeyboardButton("Verification ON"), KeyboardButton("Verification OFF")],
+        [KeyboardButton("Refer Earn ON"), KeyboardButton("Refer Earn OFF")],
         [KeyboardButton("Approve Withdrawal"), KeyboardButton("Reject Withdrawal")],
         [KeyboardButton("RDM Requests"), KeyboardButton("Approve RDM"), KeyboardButton("Reject RDM")],
         [KeyboardButton("Create Gift Code"), KeyboardButton("Reset Database")],
@@ -595,7 +597,8 @@ async def combined_message_handler(update: Update, context: ContextTypes.DEFAULT
         "Set Daily Bonus", "Withdraw ON/OFF", "UPI Withdraw ON/OFF", "VSV Withdraw ON/OFF",
         "Manual Balance", "Approve Withdrawal", "Reject Withdrawal", "Create Gift Code",
         "Reset Database", "Confirm Reset Database", "Back To Menu",
-        "RDM Requests", "Approve RDM", "Reject RDM"
+        "RDM Requests", "Approve RDM", "Reject RDM",
+        "Verification ON", "Verification OFF", "Refer Earn ON", "Refer Earn OFF"
     ]
 
     if user_id == ADMIN_ID:
@@ -639,19 +642,21 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Admin bypass verification
     if user_id != ADMIN_ID:
-        async with turso_connect() as db:
-            row = await (await db.execute("SELECT is_verified FROM users WHERE user_id = ?", (user_id,))).fetchone()
-            is_verified = int(row[0]) if row and row[0] is not None else 0
+        verify_on = await get_setting("verification_enabled", "1")
+        if verify_on == "1":
+            async with turso_connect() as db:
+                row = await (await db.execute("SELECT is_verified FROM users WHERE user_id = ?", (user_id,))).fetchone()
+                is_verified = int(row[0]) if row and row[0] is not None else 0
 
-        if is_verified != 1:
-            keyboard = [[InlineKeyboardButton("🔐 Verify Device", web_app=WebAppInfo(url=WEBAPP_URL))]]
-            await update.message.reply_text(
-                "🔐 Verify Yourself To Start Bot\n\n"
-                "🔒 *Verify Yourself*",
-                reply_markup=InlineKeyboardMarkup(keyboard),
-                parse_mode="Markdown"
-            )
-            return
+            if is_verified != 1:
+                keyboard = [[InlineKeyboardButton("🔐 Verify Device", web_app=WebAppInfo(url=WEBAPP_URL))]]
+                await update.message.reply_text(
+                    "🔐 Verify Yourself To Start Bot\n\n"
+                    "🔒 *Verify Yourself*",
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                    parse_mode="Markdown"
+                )
+                return
 
     if text == "Balance":
         await handle_balance(update, user_id)
@@ -863,14 +868,19 @@ async def handle_admin_action_input(update: Update, context: ContextTypes.DEFAUL
     elif action == 'broadcast':
         async with turso_connect() as db:
             rows = await (await db.execute("SELECT user_id FROM users")).fetchall()
+        bot = update.get_bot()
         sent = 0
-        for row in rows:
-            try:
-                await update.get_bot().send_message(chat_id=row[0], text=text)
-                sent += 1
-                await asyncio.sleep(0.05)
-            except:
-                pass
+        # 25 users ek saath bhejo - fast aur Telegram rate limit safe
+        BATCH = 25
+        user_ids = [r[0] for r in rows]
+        for i in range(0, len(user_ids), BATCH):
+            batch = user_ids[i:i+BATCH]
+            results = await asyncio.gather(
+                *[bot.send_message(chat_id=uid, text=text) for uid in batch],
+                return_exceptions=True
+            )
+            sent += sum(1 for r in results if not isinstance(r, Exception))
+            await asyncio.sleep(0.5)  # batch ke beech 0.5s
         await update.message.reply_text(f"✅ Broadcast Sent To {sent} Users.", reply_markup=get_admin_keyboard())
         context.user_data['admin_action'] = None
 
@@ -1041,8 +1051,9 @@ async def handle_admin_action_input(update: Update, context: ContextTypes.DEFAUL
                 )
                 await db.commit()
             await update.message.reply_text(
-                f"✅ Gift Code Created!\n\nCode: {code}\nAmount: ₹{amount:.2f}\n\nShare this code with users.",
-                reply_markup=get_admin_keyboard()
+                f"✅ Gift Code Created!\n\nCode: `{code}`\nAmount: ₹{amount:.2f}\n\nShare this code with users.",
+                reply_markup=get_admin_keyboard(),
+                parse_mode="Markdown"
             )
         except Exception as e:
             await update.message.reply_text(f"⚠️ Error: {e}\nFormat: Amount|Code or just Amount")
@@ -1197,6 +1208,22 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE, 
             parse_mode="Markdown",
             reply_markup=get_admin_keyboard()
         )
+
+    elif text == "Verification ON":
+        await set_setting("verification_enabled", "1")
+        await update.message.reply_text("✅ Verification Is Now ENABLED", reply_markup=get_admin_keyboard())
+
+    elif text == "Verification OFF":
+        await set_setting("verification_enabled", "0")
+        await update.message.reply_text("❌ Verification Is Now DISABLED", reply_markup=get_admin_keyboard())
+
+    elif text == "Refer Earn ON":
+        await set_setting("refer_earn_enabled", "1")
+        await update.message.reply_text("✅ Refer & Earn Is Now ENABLED", reply_markup=get_admin_keyboard())
+
+    elif text == "Refer Earn OFF":
+        await set_setting("refer_earn_enabled", "0")
+        await update.message.reply_text("❌ Refer & Earn Is Now DISABLED", reply_markup=get_admin_keyboard())
 
     elif text == "Broadcast Message":
         context.user_data['admin_action'] = 'broadcast'
@@ -1368,6 +1395,10 @@ async def handle_balance(update, user_id):
 
 
 async def handle_refer_earn(update, user_id, context):
+    refer_earn_on = await get_setting("refer_earn_enabled", "1")
+    if refer_earn_on != "1":
+        await update.message.reply_text("🙅 Refer & Earn currently disabled try again later")
+        return
     async with turso_connect() as db:
         row = await (await db.execute("SELECT referral_count FROM user_balance WHERE user_id = ?", (user_id,))).fetchone()
     referral_count = row[0] if row else 0
