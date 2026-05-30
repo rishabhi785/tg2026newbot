@@ -256,6 +256,9 @@ async def init_db():
                 channel_id INTEGER NOT NULL,
                 requested_at TEXT DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (user_id, channel_id)
+            );
+            CREATE TABLE IF NOT EXISTS co_admins (
+                user_id INTEGER PRIMARY KEY
             )
         """)
 
@@ -277,6 +280,15 @@ async def get_setting(key: str, default="0"):
     async with turso_connect() as db:
         row = await (await db.execute("SELECT value FROM bot_settings WHERE key=?", (key,))).fetchone()
     return row[0] if row else default
+
+
+async def is_admin(user_id: int) -> bool:
+    """Check karo ki user main admin hai ya co-admin"""
+    if user_id == ADMIN_ID:
+        return True
+    async with turso_connect() as db:
+        row = await (await db.execute("SELECT user_id FROM co_admins WHERE user_id=?", (user_id,))).fetchone()
+    return row is not None
 
 
 async def set_setting(key: str, value: str):
@@ -380,6 +392,15 @@ def get_user_keyboard(user_id: int):
     return ReplyKeyboardMarkup(rows, resize_keyboard=True, one_time_keyboard=False)
 
 
+async def get_user_keyboard_async(user_id: int):
+    """Co-admins ke liye bhi Admin Panel button dikhao"""
+    kb = get_user_keyboard(user_id)
+    if user_id != ADMIN_ID and await is_admin(user_id):
+        rows = kb.keyboard + [[KeyboardButton("Admin Panel")]]
+        return ReplyKeyboardMarkup(rows, resize_keyboard=True, one_time_keyboard=False)
+    return kb
+
+
 def get_admin_keyboard():
     rows = [
         [KeyboardButton("Total Users"), KeyboardButton("Withdrawal Requests")],
@@ -395,6 +416,7 @@ def get_admin_keyboard():
         [KeyboardButton("Approve Withdrawal"), KeyboardButton("Reject Withdrawal")],
         [KeyboardButton("RDM Requests"), KeyboardButton("Approve RDM"), KeyboardButton("Reject RDM")],
         [KeyboardButton("Create Gift Code"), KeyboardButton("Reset Database")],
+        [KeyboardButton("Add Co-Admin"), KeyboardButton("Remove Co-Admin")],
         [KeyboardButton("Back To Menu")],
     ]
     return ReplyKeyboardMarkup(rows, resize_keyboard=True, one_time_keyboard=False)
@@ -403,7 +425,7 @@ def get_admin_keyboard():
 async def send_main_menu(update: Update, name: str, user_id: int):
     await update.message.reply_text(
         f"😍 Welcome, *{name}*!\n\n💸 Earn Money • Refer Friends • Withdraw Instantly\n\n👇 Use button below to get started",
-        reply_markup=get_user_keyboard(user_id),
+        reply_markup=await get_user_keyboard_async(user_id),
         parse_mode="Markdown"
     )
 
@@ -598,10 +620,11 @@ async def combined_message_handler(update: Update, context: ContextTypes.DEFAULT
         "Manual Balance", "Approve Withdrawal", "Reject Withdrawal", "Create Gift Code",
         "Reset Database", "Confirm Reset Database", "Back To Menu",
         "RDM Requests", "Approve RDM", "Reject RDM",
-        "Verification ON", "Verification OFF", "Refer Earn ON", "Refer Earn OFF"
+        "Verification ON", "Verification OFF", "Refer Earn ON", "Refer Earn OFF",
+        "Add Co-Admin", "Remove Co-Admin"
     ]
 
-    if user_id == ADMIN_ID:
+    if await is_admin(user_id):
         # If admin is in middle of an action input
         if context.user_data.get('admin_action'):
             await handle_admin_action_input(update, context, text)
@@ -631,7 +654,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
     # Admin panel sub-actions (admin only)
-    if user_id == ADMIN_ID and context.user_data.get('admin_action'):
+    if await is_admin(user_id) and context.user_data.get('admin_action'):
         await handle_admin_action_input(update, context, text)
         return
 
@@ -641,7 +664,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # Admin bypass verification
-    if user_id != ADMIN_ID:
+    if not await is_admin(user_id):
         verify_on = await get_setting("verification_enabled", "1")
         if verify_on == "1":
             async with turso_connect() as db:
@@ -1036,6 +1059,31 @@ async def handle_admin_action_input(update: Update, context: ContextTypes.DEFAUL
             await update.message.reply_text("⚠️ Send A Valid RDM ID.")
         context.user_data['admin_action'] = None
 
+    elif action == 'add_co_admin':
+        try:
+            new_admin_id = int(text.strip())
+            if new_admin_id == ADMIN_ID:
+                await update.message.reply_text("⚠️ Ye already main admin hai!", reply_markup=get_admin_keyboard())
+            else:
+                async with turso_connect() as db:
+                    await db.execute("INSERT OR IGNORE INTO co_admins (user_id) VALUES (?)", (new_admin_id,))
+                    await db.commit()
+                await update.message.reply_text(f"✅ User `{new_admin_id}` ko Co-Admin bana diya!", parse_mode="Markdown", reply_markup=get_admin_keyboard())
+        except ValueError:
+            await update.message.reply_text("⚠️ Sirf User ID number bhejo.")
+        context.user_data['admin_action'] = None
+
+    elif action == 'remove_co_admin':
+        try:
+            rem_id = int(text.strip())
+            async with turso_connect() as db:
+                await db.execute("DELETE FROM co_admins WHERE user_id=?", (rem_id,))
+                await db.commit()
+            await update.message.reply_text(f"✅ User `{rem_id}` ko Co-Admin se hata diya.", parse_mode="Markdown", reply_markup=get_admin_keyboard())
+        except ValueError:
+            await update.message.reply_text("⚠️ Sirf User ID number bhejo.")
+        context.user_data['admin_action'] = None
+
     elif action == 'create_gift_code':
         parts = text.split("|")
         try:
@@ -1208,6 +1256,27 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE, 
             parse_mode="Markdown",
             reply_markup=get_admin_keyboard()
         )
+
+    elif text == "Add Co-Admin":
+        context.user_data['admin_action'] = 'add_co_admin'
+        await update.message.reply_text(
+            "👤 *ADD CO-ADMIN*\n\nUse karne wale ka User ID bhejo:\n_(User ID @userinfobot se milega)_",
+            parse_mode="Markdown"
+        )
+
+    elif text == "Remove Co-Admin":
+        context.user_data['admin_action'] = 'remove_co_admin'
+        async with turso_connect() as db:
+            rows = await (await db.execute("SELECT user_id FROM co_admins")).fetchall()
+        if not rows:
+            await update.message.reply_text("ℹ️ Koi Co-Admin nahi hai abhi.", reply_markup=get_admin_keyboard())
+            context.user_data['admin_action'] = None
+        else:
+            ids = "\n".join([str(r[0]) for r in rows])
+            await update.message.reply_text(
+                f"👤 *CURRENT CO-ADMINS:*\n`{ids}`\n\nJis ko remove karna ho uska User ID bhejo:",
+                parse_mode="Markdown"
+            )
 
     elif text == "Verification ON":
         await set_setting("verification_enabled", "1")
