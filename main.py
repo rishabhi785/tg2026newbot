@@ -256,11 +256,14 @@ async def init_db():
                 channel_id INTEGER NOT NULL,
                 requested_at TEXT DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (user_id, channel_id)
-            );
+            )
+        """)
+        await db.execute("""
             CREATE TABLE IF NOT EXISTS co_admins (
                 user_id INTEGER PRIMARY KEY
             )
         """)
+        await db.commit()
 
         defaults = [
             ("refer_reward", "5"),
