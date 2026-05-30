@@ -748,7 +748,7 @@ async def handle_admin_panel_menu(update: Update, context: ContextTypes.DEFAULT_
 
 async def handle_admin_action_input(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
     user_id = update.effective_user.id
-    if user_id != ADMIN_ID:
+    if not await is_admin(user_id):
         return
 
     action = context.user_data.get('admin_action')
@@ -1136,7 +1136,7 @@ async def handle_admin_action_input(update: Update, context: ContextTypes.DEFAUL
 
 async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
     user_id = update.effective_user.id
-    if user_id != ADMIN_ID:
+    if not await is_admin(user_id):
         return
 
     if text == "Total Users":
