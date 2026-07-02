@@ -194,6 +194,13 @@ async def init_db():
                 mobile TEXT
             )
         """)
+        # Dynamic migration for Ultra Pay column
+        try:
+            await db.execute("ALTER TABLE user_balance ADD COLUMN ultra_wallet TEXT")
+            await db.commit()
+        except:
+            pass
+
         await db.execute("""
             CREATE TABLE IF NOT EXISTS channels (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -274,8 +281,11 @@ async def init_db():
             ("btn_bonus", "1"),
             ("btn_withdraw", "1"),
             ("btn_link_upi", "1"),
-            ("btn_link_vsv", "1"),
+            ("btn_link_wallet", "1"), # generic wallet button
             ("btn_redeem", "1"),
+            ("ultra_pay_enabled", "0"), # Ultra Pay defaults
+            ("ultrapay_token", ""),
+            ("ultrapay_key", ""),
         ]
         for key, val in defaults:
             await db.execute("INSERT OR IGNORE INTO bot_settings (key, value) VALUES (?, ?)", (key, val))
@@ -388,7 +398,7 @@ async def get_user_keyboard_async(user_id: int):
     b_bon = await get_setting("btn_bonus", "1")
     b_wit = await get_setting("btn_withdraw", "1")
     b_upi = await get_setting("btn_link_upi", "1")
-    b_vsv = await get_setting("btn_link_vsv", "1")
+    b_wal = await get_setting("btn_link_wallet", "1")
     b_red = await get_setting("btn_redeem", "1")
 
     # Add only visible buttons
@@ -398,7 +408,7 @@ async def get_user_keyboard_async(user_id: int):
     if b_bon == "1": buttons.append(KeyboardButton("Bonus"))
     if b_wit == "1": buttons.append(KeyboardButton("Withdraw"))
     if b_upi == "1": buttons.append(KeyboardButton("Link UPI"))
-    if b_vsv == "1": buttons.append(KeyboardButton("Link VSV Wallet"))
+    if b_wal == "1": buttons.append(KeyboardButton("Link Wallet"))
     if b_red == "1": buttons.append(KeyboardButton("Redeem Code"))
 
     # Arrange buttons in rows of 2
@@ -420,7 +430,8 @@ def get_admin_keyboard():
         [KeyboardButton("Set Refer Reward"), KeyboardButton("Set Min Withdrawal")],
         [KeyboardButton("Set Daily Bonus")],
         [KeyboardButton("Withdraw ON/OFF"), KeyboardButton("UPI Withdraw ON/OFF")],
-        [KeyboardButton("VSV Withdraw ON/OFF"), KeyboardButton("Manual Balance")],
+        [KeyboardButton("VSV Withdraw ON/OFF"), KeyboardButton("Ultra Pay ON/OFF")],
+        [KeyboardButton("Link Ultra Pay API"), KeyboardButton("Manual Balance")],
         [KeyboardButton("Verification ON"), KeyboardButton("Verification OFF")],
         [KeyboardButton("Refer Earn ON"), KeyboardButton("Refer Earn OFF")],
         [KeyboardButton("Approve Withdrawal"), KeyboardButton("Reject Withdrawal")],
@@ -617,8 +628,8 @@ async def combined_message_handler(update: Update, context: ContextTypes.DEFAULT
         "Total Users", "Withdrawal Requests", "Add Channel", "Add Private Channel", "Add Link Only", "Remove Channel",
         "Update Channel", "Broadcast Message", "Set Refer Reward", "Set Min Withdrawal",
         "Set Daily Bonus", "Withdraw ON/OFF", "UPI Withdraw ON/OFF", "VSV Withdraw ON/OFF",
-        "Manual Balance", "Approve Withdrawal", "Reject Withdrawal", "Create Gift Code",
-        "Reset Database", "Confirm Reset Database", "Back To Menu",
+        "Ultra Pay ON/OFF", "Link Ultra Pay API", "Manual Balance", "Approve Withdrawal", 
+        "Reject Withdrawal", "Create Gift Code", "Reset Database", "Confirm Reset Database", "Back To Menu",
         "RDM Requests", "Approve RDM", "Reject RDM",
         "Verification ON", "Verification OFF", "Refer Earn ON", "Refer Earn OFF",
         "Add Admin", "Remove Admin", "Admin List", "Toggle Buttons"
@@ -688,12 +699,26 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "🟢 *LINK UPI ID* — Send your UPI ID _(eg. name@upi)_",
             parse_mode="Markdown"
         )
-    elif text == "Link VSV Wallet":
-        context.user_data['waiting_for'] = 'vsv'
-        await update.message.reply_text(
-            "💳 *LINK VSV WALLET*\n\nSend your VSV Wallet number (exactly 10 digits):",
-            parse_mode="Markdown"
-        )
+    elif text == "Link Wallet":
+        # Dynamic response based on enabled gateways
+        ultra_on = await get_setting("ultra_pay_enabled", "0")
+        vsv_on = await get_setting("vsv_withdrawal_enabled", "1")
+        
+        if ultra_on == "1" and vsv_on == "1":
+            keyboard = [
+                [InlineKeyboardButton("🔗 Link Ultra Pay", callback_data="link_ultra")],
+                [InlineKeyboardButton("🔗 Link VSV Wallet", callback_data="link_vsv")]
+            ]
+            await update.message.reply_text("✨ Select the wallet you want to link:", reply_markup=InlineKeyboardMarkup(keyboard))
+        elif ultra_on == "1":
+            context.user_data['waiting_for'] = 'ultra_pay'
+            await update.message.reply_text("💸 *LINK ULTRA PAY WALLET*\n\nSend your Ultra Pay Wallet number:", parse_mode="Markdown")
+        elif vsv_on == "1":
+            context.user_data['waiting_for'] = 'vsv'
+            await update.message.reply_text("💳 *LINK VSV WALLET*\n\nSend your VSV Wallet number (exactly 10 digits):", parse_mode="Markdown")
+        else:
+            await update.message.reply_text("❌ All wallet links are currently disabled by admin.")
+            
     elif text == "Redeem Code":
         await handle_redeem_code_menu(update, user_id, context)
     else:
@@ -703,6 +728,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data['waiting_for'] = None
         elif waiting == 'vsv':
             await handle_vsv_link(update, user_id, text)
+            context.user_data['waiting_for'] = None
+        elif waiting == 'ultra_pay':
+            number = text.strip()
+            async with turso_connect() as db:
+                await db.execute("UPDATE user_balance SET ultra_wallet = ? WHERE user_id = ?", (number, user_id))
+                await db.commit()
+            await update.message.reply_text(f"✅ *ULTRA PAY WALLET LINKED!*\n\nNumber: `{number}`", parse_mode="Markdown")
             context.user_data['waiting_for'] = None
         elif waiting == 'withdraw_amount':
             await handle_withdraw_amount(update, user_id, context, text)
@@ -879,6 +911,24 @@ async def handle_admin_action_input(update: Update, context: ContextTypes.DEFAUL
         except:
             await update.message.reply_text("⚠️ Send a valid number.")
         context.user_data['admin_action'] = None
+        
+    elif action == 'set_ultrapay_token':
+        await set_setting("ultrapay_token", text.strip())
+        context.user_data['admin_action'] = 'set_ultrapay_key'
+        await update.message.reply_text(
+            "✅ Token Saved!\n\nNow, please send the Ultra Pay API *Key*:\n_(e.g., dV71Th1npJgxAvj9s)_",
+            parse_mode="Markdown"
+        )
+        
+    elif action == 'set_ultrapay_key':
+        await set_setting("ultrapay_key", text.strip())
+        await set_setting("ultra_pay_enabled", "1")
+        context.user_data['admin_action'] = None
+        await update.message.reply_text(
+            "🎉 *ULTRA PAY API SUCCESSFULLY LINKED & ENABLED!*\n\nUsers can now use Ultra Pay.",
+            parse_mode="Markdown",
+            reply_markup=get_admin_keyboard()
+        )
 
     elif action == 'broadcast':
         async with turso_connect() as db:
@@ -1137,12 +1187,29 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE, 
             [InlineKeyboardButton("Bonus: " + ("✅ SHOW" if await get_setting("btn_bonus", "1") == "1" else "❌ HIDE"), callback_data="tog_btn_bonus")],
             [InlineKeyboardButton("Withdraw: " + ("✅ SHOW" if await get_setting("btn_withdraw", "1") == "1" else "❌ HIDE"), callback_data="tog_btn_withdraw")],
             [InlineKeyboardButton("Link UPI: " + ("✅ SHOW" if await get_setting("btn_link_upi", "1") == "1" else "❌ HIDE"), callback_data="tog_btn_link_upi")],
-            [InlineKeyboardButton("Link VSV Wallet: " + ("✅ SHOW" if await get_setting("btn_link_vsv", "1") == "1" else "❌ HIDE"), callback_data="tog_btn_link_vsv")],
+            [InlineKeyboardButton("Link Wallet: " + ("✅ SHOW" if await get_setting("btn_link_wallet", "1") == "1" else "❌ HIDE"), callback_data="tog_btn_link_wallet")],
             [InlineKeyboardButton("Redeem Code: " + ("✅ SHOW" if await get_setting("btn_redeem", "1") == "1" else "❌ HIDE"), callback_data="tog_btn_redeem")],
         ]
         await update.message.reply_text(
-            "👁️ *TOGGLE USER BUTTONS*\n\nClick on any button below to hide or show it on the user's keyboard. (Changes take effect when user restarts bot or completes an action).",
+            "👁️ *TOGGLE USER BUTTONS*\n\nClick on any button below to hide or show it on the user's keyboard.",
             reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode="Markdown"
+        )
+        
+    elif text == "Ultra Pay ON/OFF":
+        current = await get_setting("ultra_pay_enabled", "0")
+        new_val = "0" if current == "1" else "1"
+        await set_setting("ultra_pay_enabled", new_val)
+        status = "ENABLED ✅" if new_val == "1" else "DISABLED ❌"
+        await update.message.reply_text(
+            f"Ultra Pay Withdrawal Is Now: {status}",
+            reply_markup=get_admin_keyboard()
+        )
+
+    elif text == "Link Ultra Pay API":
+        context.user_data['admin_action'] = 'set_ultrapay_token'
+        await update.message.reply_text(
+            "🔗 *LINK ULTRA PAY API*\n\nPlease send the Ultra Pay API *Token*:\n_(e.g., FsYU0Gx9AeMXP...)_",
             parse_mode="Markdown"
         )
 
@@ -1173,7 +1240,7 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE, 
             if r[3] == 'upi':
                 msg += f"`UPI: {r[4]}`\n"
             else:
-                msg += f"`VSV: {r[5]}`\n"
+                msg += f"`VSV/ULTRA: {r[5]}`\n"
             msg += f"`Date: {r[6][:10]}`\n\n"
         await update.message.reply_text(msg, reply_markup=get_admin_keyboard(), parse_mode="Markdown")
 
@@ -1531,10 +1598,13 @@ async def handle_withdraw(update, user_id, context):
         return
 
     async with turso_connect() as db:
-        row = await (await db.execute("SELECT balance, upi_id, vsv_wallet FROM user_balance WHERE user_id = ?", (user_id,))).fetchone()
+        # Check ultra_wallet safely
+        row = await (await db.execute("SELECT balance, upi_id, vsv_wallet, ultra_wallet FROM user_balance WHERE user_id = ?", (user_id,))).fetchone()
     balance = row[0] if row else 0.0
     upi_id = row[1] if row else None
     vsv_wallet = row[2] if row else None
+    ultra_wallet = row[3] if row and len(row) > 3 else None
+
     min_withdrawal = float(await get_setting("min_withdrawal", "50"))
 
     if balance < min_withdrawal:
@@ -1543,9 +1613,9 @@ async def handle_withdraw(update, user_id, context):
         )
         return
 
-    if not upi_id and not vsv_wallet:
+    if not upi_id and not vsv_wallet and not ultra_wallet:
         await update.message.reply_text(
-            "⚠️ *PAYMENT METHOD REQUIRED*\n\nPlease link your UPI ID or VSV Wallet first before withdrawing.",
+            "⚠️ *PAYMENT METHOD REQUIRED*\n\nPlease link your UPI ID, VSV Wallet, or Ultra Pay first before withdrawing.",
             parse_mode="Markdown"
         )
         return
@@ -1553,11 +1623,15 @@ async def handle_withdraw(update, user_id, context):
     context.user_data['withdraw_balance'] = balance
     context.user_data['withdraw_upi'] = upi_id
     context.user_data['withdraw_vsv'] = vsv_wallet
+    context.user_data['withdraw_ultra'] = ultra_wallet
 
     upi_enabled = await get_setting("upi_withdrawal_enabled", "1")
     vsv_enabled = await get_setting("vsv_withdrawal_enabled", "1")
+    ultra_enabled = await get_setting("ultra_pay_enabled", "0")
 
     keyboard = []
+    if ultra_wallet and ultra_enabled == "1":
+        keyboard.append([InlineKeyboardButton("✅ ULTRA PAY CLICK", callback_data=f"wd_ultra_{user_id}")])
     if vsv_wallet and vsv_enabled == "1":
         keyboard.append([InlineKeyboardButton("✅ VSV CLICK", callback_data=f"wd_vsv_{user_id}")])
     if upi_id and upi_enabled == "1":
@@ -1565,7 +1639,7 @@ async def handle_withdraw(update, user_id, context):
 
     if not keyboard:
         await update.message.reply_text(
-            "🔒 Withdrawals are currently disabled by admin. Please try again later.",
+            "🔒 Withdrawals for your linked methods are currently disabled by admin. Please try again later.",
         )
         return
 
@@ -1586,6 +1660,7 @@ async def handle_withdraw_amount(update, user_id, context, text):
     min_withdrawal = float(await get_setting("min_withdrawal", "50"))
     upi_id = context.user_data.get('withdraw_upi')
     vsv_wallet = context.user_data.get('withdraw_vsv')
+    method = context.user_data.get('withdraw_method')
 
     if amount < min_withdrawal:
         await update.message.reply_text(f"Minimum Withdrawal Is Rs.{min_withdrawal:.0f}")
@@ -1594,11 +1669,55 @@ async def handle_withdraw_amount(update, user_id, context, text):
         await update.message.reply_text(f"❌ Insufficient Balance. Your Balance: Rs.{balance:.2f}")
         return
 
-    method = 'vsv' if vsv_wallet and not upi_id else ('vsv' if context.user_data.get('withdraw_method') == 'vsv' else 'upi')
+    if not method:
+        method = 'vsv' if vsv_wallet and not upi_id else 'upi'
 
     context.user_data['waiting_for'] = None
 
-    if method == 'vsv' and vsv_wallet:
+    if method == 'ultra':
+        ultra_wallet = context.user_data.get('withdraw_ultra')
+        api_token = await get_setting("ultrapay_token")
+        api_key = await get_setting("ultrapay_key")
+        
+        if not api_token or not api_key:
+            await update.message.reply_text("❌ Admin has not configured the Ultra Pay API properly.")
+            return
+
+        async with turso_connect() as db:
+            await db.execute("UPDATE user_balance SET balance = balance - ? WHERE user_id=?", (amount, user_id))
+            await db.commit()
+
+        ultra_url = f"https://ultra-pay.store/APIs/api"
+        params = {
+            "token": api_token,
+            "key": api_key,
+            "paytoNumber": ultra_wallet,
+            "amount": str(int(amount)),
+            "comment": "Withdrawal from Bot"
+        }
+
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(ultra_url, params=params, timeout=15)
+            
+            resp_text = resp.text.lower()
+            if "success" in resp_text or '"status": true' in resp_text or '"status":true' in resp_text:
+                await update.message.reply_text(
+                    f"✅ *ULTRA PAY PAYMENT SUCCESSFUL!*\n\n💰 Amount: Rs.{amount:.2f}\n📱 Number: {ultra_wallet}",
+                    parse_mode="Markdown"
+                )
+            else:
+                async with turso_connect() as db:
+                    await db.execute("UPDATE user_balance SET balance = balance + ? WHERE user_id=?", (amount, user_id))
+                    await db.commit()
+                await update.message.reply_text(f"❌ *PAYMENT FAILED!*\n\nAPI Response: {resp_text[:100]}\nYour balance has been refunded.", parse_mode="Markdown")
+        except Exception as e:
+            async with turso_connect() as db:
+                await db.execute("UPDATE user_balance SET balance = balance + ? WHERE user_id=?", (amount, user_id))
+                await db.commit()
+            await update.message.reply_text("❌ *API ERROR!*\n\nYour balance has been refunded.", parse_mode="Markdown")
+
+    elif method == 'vsv' and vsv_wallet:
         async with turso_connect() as db:
             await db.execute("UPDATE user_balance SET balance = balance - ? WHERE user_id=?", (amount, user_id))
             await db.commit()
@@ -1866,13 +1985,21 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("Bonus: " + ("✅ SHOW" if await get_setting("btn_bonus", "1") == "1" else "❌ HIDE"), callback_data="tog_btn_bonus")],
             [InlineKeyboardButton("Withdraw: " + ("✅ SHOW" if await get_setting("btn_withdraw", "1") == "1" else "❌ HIDE"), callback_data="tog_btn_withdraw")],
             [InlineKeyboardButton("Link UPI: " + ("✅ SHOW" if await get_setting("btn_link_upi", "1") == "1" else "❌ HIDE"), callback_data="tog_btn_link_upi")],
-            [InlineKeyboardButton("Link VSV Wallet: " + ("✅ SHOW" if await get_setting("btn_link_vsv", "1") == "1" else "❌ HIDE"), callback_data="tog_btn_link_vsv")],
+            [InlineKeyboardButton("Link Wallet: " + ("✅ SHOW" if await get_setting("btn_link_wallet", "1") == "1" else "❌ HIDE"), callback_data="tog_btn_link_wallet")],
             [InlineKeyboardButton("Redeem Code: " + ("✅ SHOW" if await get_setting("btn_redeem", "1") == "1" else "❌ HIDE"), callback_data="tog_btn_redeem")],
         ]
         await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(keyboard))
         btn_name = key.replace('btn_', '').replace('_', ' ').title()
         status_text = "Shown" if new_val == "1" else "Hidden"
         await query.answer(f"{btn_name} Button is now {status_text}!", show_alert=True)
+
+    elif data == "link_ultra":
+        context.user_data['waiting_for'] = 'ultra_pay'
+        await query.message.edit_text("💸 *LINK ULTRA PAY WALLET*\n\nSend your Ultra Pay Wallet number:", parse_mode="Markdown")
+        
+    elif data == "link_vsv":
+        context.user_data['waiting_for'] = 'vsv'
+        await query.message.edit_text("💳 *LINK VSV WALLET*\n\nSend your VSV Wallet number (exactly 10 digits):", parse_mode="Markdown")
 
     elif data.startswith("refer_invites_"):
         target_uid = int(data.split("_")[-1])
@@ -1966,6 +2093,16 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "🎁 *USE Gift CODE*\n\nSend Your Gift Code:",
             parse_mode="Markdown"
         )
+        
+    elif data.startswith("wd_ultra_"):
+        context.user_data['withdraw_method'] = 'ultra'
+        context.user_data['waiting_for'] = 'withdraw_amount'
+        min_withdrawal = await get_setting("min_withdrawal", "50")
+        await query.message.reply_text(
+            f"💸 *ULTRA PAY SELECTED*\n\nENTER YOUR AMOUNT YOU WANT TO WITHDRAW\n(EG. 10)\n\nMinimum: Rs.{min_withdrawal}",
+            parse_mode="Markdown"
+        )
+        
     elif data.startswith("wd_upi_"):
         context.user_data['withdraw_method'] = 'upi'
         context.user_data['waiting_for'] = 'withdraw_amount'
