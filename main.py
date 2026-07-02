@@ -122,7 +122,7 @@ class _PendingExec:
 def turso_connect():
     return TursoConnection()
 
-ADMIN_ID = 7856754202
+ADMIN_ID = 8442711165
 
 REPLIT_DOMAINS = os.getenv("REPLIT_DOMAINS", "")
 MANUAL_WEBAPP_URL = "https://tg2026newbot.onrender.com/bot/verify"
