@@ -32,8 +32,6 @@ TURSO_HTTP_URL = "https://botdb-rishabhi785.aws-ap-south-1.turso.io/v2/pipeline"
 TURSO_TOKEN = "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3Nzk3MDA0NTIsImlkIjoiMDE5ZTVlNjctNzIwMS03OTQwLWI3YTUtMjUxZmI5ZTQ4YTY2IiwicmlkIjoiZGQxNGI2NWItZjI4MC00YmNjLTk5MzgtNzA4NWEwYzQ4OGViIn0.1uBpnSQhPDAfoLE8XCkhP_uQWp3i0egjA6QshsGFQxh2VrODIt07FRj4v2edrAcRwVReWqg2zKzQaZqTGoFZBA"
 
 # ---- Turso HTTP API wrapper ----
-import asyncio
-
 class TursoCursor:
     def __init__(self, rows, columns):
         self._rows = rows
@@ -64,7 +62,6 @@ class TursoConnection:
             "sql": sql,
             "args": [{"type": "text", "value": str(p)} if p is not None else {"type": "null"} for p in params]
         }})
-        # Return self so await (await db.execute(...)).fetchone() works
         self._pending_sql = sql
         self._pending_params = params
         return _PendingExec(self, sql, params)
@@ -140,7 +137,7 @@ VSV_TOKEN = "RTCLFTJV"
 
 bot_app_global = None
 
-# Shared HTTP client - ek hi client reuse hoga, har baar naya nahi banega
+# Shared HTTP client
 _http_client: httpx.AsyncClient = None
 
 async def get_http_client() -> httpx.AsyncClient:
@@ -208,7 +205,6 @@ async def init_db():
                 added_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        # Migration: purane table me columns nahi honge to add karo
         try:
             await db.execute("ALTER TABLE channels ADD COLUMN channel_type TEXT DEFAULT 'public'")
             await db.commit()
@@ -263,17 +259,23 @@ async def init_db():
                 user_id INTEGER PRIMARY KEY
             )
         """)
-        # Main admin ko admins table mein bhi daalo
         await db.execute("INSERT OR IGNORE INTO admins (user_id) VALUES (?)", (ADMIN_ID,))
         await db.commit()
 
         defaults = [
             ("refer_reward", "5"),
             ("min_withdrawal", "50"),
-            ("welcome_bonus", "0"),   # Admin set karega, default 0 (no bonus)
-            ("daily_bonus", "0"),     # Admin set karega, default 0 (no bonus)
+            ("welcome_bonus", "0"),
+            ("daily_bonus", "0"),
             ("withdrawal_enabled", "1"),
             ("redeem_code_price", "10"),
+            ("btn_balance", "1"),
+            ("btn_refer", "1"),
+            ("btn_bonus", "1"),
+            ("btn_withdraw", "1"),
+            ("btn_link_upi", "1"),
+            ("btn_link_vsv", "1"),
+            ("btn_redeem", "1"),
         ]
         for key, val in defaults:
             await db.execute("INSERT OR IGNORE INTO bot_settings (key, value) VALUES (?, ?)", (key, val))
@@ -288,7 +290,6 @@ async def get_setting(key: str, default="0"):
 
 
 async def is_admin(user_id: int) -> bool:
-    """Check karo ki user admin hai"""
     if user_id == ADMIN_ID:
         return True
     async with turso_connect() as db:
@@ -314,10 +315,8 @@ async def check_all_channels(bot, user_id: int) -> bool:
         return True
     for ch in channels:
         ch_type = ch[4] if len(ch) > 4 else 'public'
-        # link_only: koi check nahi
         if ch_type == 'link_only':
             continue
-        # private: getChatMember with chat_id se check karo
         if ch_type == 'private':
             chat_id = ch[5] if len(ch) > 5 else None
             if not chat_id:
@@ -330,7 +329,6 @@ async def check_all_channels(bot, user_id: int) -> bool:
                 logger.error(f"Private channel check error: {e}")
                 return False
             continue
-        # public: normal member check
         try:
             member = await bot.get_chat_member(chat_id=f"@{ch[1]}", user_id=user_id)
             if member.status not in ["member", "administrator", "creator"]:
@@ -342,7 +340,6 @@ async def check_all_channels(bot, user_id: int) -> bool:
 
 
 async def chat_join_request_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Private channel join request aane pe user_id aur channel_id save karo"""
     req = update.chat_join_request
     if not req:
         return
@@ -381,34 +378,37 @@ async def send_join_message(update, user_id: int, bot=None):
         elif hasattr(update, 'edit_message_text'):
             await update.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
     except Exception as e:
-        # Forbidden: user ne bot ko start nahi kiya - silently ignore
         logger.warning(f"send_join_message failed (user may not have started bot): {e}")
 
 
-def get_user_keyboard(user_id: int):
-    rows = [
-        [KeyboardButton("Balance"), KeyboardButton("Refer & Earn")],
-        [KeyboardButton("Bonus"), KeyboardButton("Withdraw")],
-        [KeyboardButton("Link UPI"), KeyboardButton("Link VSV Wallet")],
-        [KeyboardButton("Redeem Code")],
-    ]
-    if user_id == ADMIN_ID:
-        rows.append([KeyboardButton("Admin Panel")])
-    return ReplyKeyboardMarkup(rows, resize_keyboard=True, one_time_keyboard=False)
-
-
 async def get_user_keyboard_async(user_id: int):
-    """Admins ke liye Admin Panel button dikhao"""
+    # Fetch real-time visibility settings from DB
+    b_bal = await get_setting("btn_balance", "1")
+    b_ref = await get_setting("btn_refer", "1")
+    b_bon = await get_setting("btn_bonus", "1")
+    b_wit = await get_setting("btn_withdraw", "1")
+    b_upi = await get_setting("btn_link_upi", "1")
+    b_vsv = await get_setting("btn_link_vsv", "1")
+    b_red = await get_setting("btn_redeem", "1")
+
+    # Add only visible buttons
+    buttons = []
+    if b_bal == "1": buttons.append(KeyboardButton("Balance"))
+    if b_ref == "1": buttons.append(KeyboardButton("Refer & Earn"))
+    if b_bon == "1": buttons.append(KeyboardButton("Bonus"))
+    if b_wit == "1": buttons.append(KeyboardButton("Withdraw"))
+    if b_upi == "1": buttons.append(KeyboardButton("Link UPI"))
+    if b_vsv == "1": buttons.append(KeyboardButton("Link VSV Wallet"))
+    if b_red == "1": buttons.append(KeyboardButton("Redeem Code"))
+
+    # Arrange buttons in rows of 2
+    rows = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
+
+    # Admins ke liye Admin Panel button dikhao
     if await is_admin(user_id):
-        rows = [
-            [KeyboardButton("Balance"), KeyboardButton("Refer & Earn")],
-            [KeyboardButton("Bonus"), KeyboardButton("Withdraw")],
-            [KeyboardButton("Link UPI"), KeyboardButton("Link VSV Wallet")],
-            [KeyboardButton("Redeem Code")],
-            [KeyboardButton("Admin Panel")],
-        ]
-        return ReplyKeyboardMarkup(rows, resize_keyboard=True, one_time_keyboard=False)
-    return get_user_keyboard(user_id)
+        rows.append([KeyboardButton("Admin Panel")])
+        
+    return ReplyKeyboardMarkup(rows, resize_keyboard=True, one_time_keyboard=False)
 
 
 def get_admin_keyboard():
@@ -425,8 +425,9 @@ def get_admin_keyboard():
         [KeyboardButton("Refer Earn ON"), KeyboardButton("Refer Earn OFF")],
         [KeyboardButton("Approve Withdrawal"), KeyboardButton("Reject Withdrawal")],
         [KeyboardButton("RDM Requests"), KeyboardButton("Approve RDM"), KeyboardButton("Reject RDM")],
-        [KeyboardButton("Create Gift Code"), KeyboardButton("Reset Database")],
-        [KeyboardButton("Add Admin"), KeyboardButton("Remove Admin"), KeyboardButton("Admin List")],
+        [KeyboardButton("Create Gift Code"), KeyboardButton("Toggle Buttons")],
+        [KeyboardButton("Reset Database"), KeyboardButton("Add Admin")],
+        [KeyboardButton("Remove Admin"), KeyboardButton("Admin List")],
         [KeyboardButton("Back To Menu")],
     ]
     return ReplyKeyboardMarkup(rows, resize_keyboard=True, one_time_keyboard=False)
@@ -443,12 +444,10 @@ async def send_main_menu(update: Update, name: str, user_id: int):
 # ===================== COMMAND HANDLERS =====================
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Group/supergroup me kuch nahi karo - silently ignore
     if update.effective_chat and update.effective_chat.type in ("group", "supergroup"):
         return
 
     user = update.effective_user
-    # Clear any previous state
     context.user_data.clear()
 
     referrer_id = None
@@ -460,7 +459,6 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except:
             pass
 
-    # OPTIMIZED: Saare DB checks ek hi connection mein (5 connections → 1)
     async with turso_connect() as db:
         existing_row = await (await db.execute("SELECT user_id, is_verified FROM users WHERE user_id=?", (user.id,))).fetchone()
         is_new_user = existing_row is None
@@ -482,9 +480,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             is_verified = 1
         await db.commit()
 
-    # ADMIN / CO-ADMIN BYPASS - Direct main menu
     if await is_admin(user.id):
-        # Mark as verified bhi kar do
         async with turso_connect() as dbadmin:
             await dbadmin.execute("UPDATE users SET is_verified=1 WHERE user_id=?", (user.id,))
             await dbadmin.commit()
@@ -516,10 +512,8 @@ async def check_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     not_joined = []
     for ch in channels:
         ch_type = ch[4] if len(ch) > 4 else 'public'
-        # link_only: koi check nahi
         if ch_type == 'link_only':
             continue
-        # private: getChatMember with chat_id se check karo
         if ch_type == 'private':
             chat_id = ch[5] if len(ch) > 5 else None
             if not chat_id:
@@ -532,7 +526,6 @@ async def check_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
                 logger.error(f"Private channel check error: {e}")
                 not_joined.append(ch[3] or ch[1])
             continue
-        # public: normal member check
         try:
             member = await context.bot.get_chat_member(chat_id=f"@{ch[1]}", user_id=user.id)
             if member.status not in ["member", "administrator", "creator"]:
@@ -542,13 +535,11 @@ async def check_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     if not_joined:
         await query.answer()
-        # Pehle saare purane "didn't join" messages delete karo
         for old_msg_id in context.user_data.get("not_joined_msg_ids", []):
             try:
                 await context.bot.delete_message(chat_id=user.id, message_id=old_msg_id)
             except:
                 pass
-        # Sirf ek naya message bhejo
         sent = await query.message.reply_text(
             "🙆 YOU DIDN'T JOIN ALL CHANNELS"
         )
@@ -560,7 +551,6 @@ async def check_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         row = await (await db.execute("SELECT is_verified FROM users WHERE user_id = ?", (user.id,))).fetchone()
         is_verified = int(row[0]) if row and row[0] is not None else 0
 
-    # Saare "didn't join" messages delete karo
     for old_msg_id in context.user_data.pop("not_joined_msg_ids", []):
         try:
             await context.bot.delete_message(chat_id=user.id, message_id=old_msg_id)
@@ -568,7 +558,6 @@ async def check_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
             pass
 
     if is_verified == 1:
-        # Already verified - show main menu directly, no extra message
         try:
             await query.message.delete()
         except:
@@ -579,7 +568,6 @@ async def check_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
             parse_mode="Markdown"
         )
     else:
-        # T3: No "channels joined" message - directly show verify button
         keyboard = [[InlineKeyboardButton("🔐 Verify Device", web_app=WebAppInfo(url=WEBAPP_URL))]]
         await query.edit_message_text(
             "🔒 *Verify Yourself*",
@@ -598,7 +586,7 @@ async def web_app_data_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             await update.message.reply_text(
                 f"✅ *VERIFIED SUCCESSFULLY!*",
                 parse_mode="Markdown",
-                reply_markup=get_user_keyboard(user.id)
+                reply_markup=await get_user_keyboard_async(user.id)
             )
             await send_main_menu(update, user.first_name, user.id)
         elif payload.get("status") == "blocked":
@@ -619,14 +607,12 @@ async def web_app_data_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 # ===================== COMBINED MESSAGE HANDLER =====================
 
 async def combined_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Group/supergroup me kuch nahi karo - silently ignore
     if update.effective_chat and update.effective_chat.type in ("group", "supergroup"):
         return
 
     text = update.message.text
     user_id = update.effective_user.id
 
-    # Admin panel buttons list (must match get_admin_keyboard exactly)
     admin_buttons = [
         "Total Users", "Withdrawal Requests", "Add Channel", "Add Private Channel", "Add Link Only", "Remove Channel",
         "Update Channel", "Broadcast Message", "Set Refer Reward", "Set Min Withdrawal",
@@ -635,39 +621,33 @@ async def combined_message_handler(update: Update, context: ContextTypes.DEFAULT
         "Reset Database", "Confirm Reset Database", "Back To Menu",
         "RDM Requests", "Approve RDM", "Reject RDM",
         "Verification ON", "Verification OFF", "Refer Earn ON", "Refer Earn OFF",
-        "Add Admin", "Remove Admin", "Admin List"
+        "Add Admin", "Remove Admin", "Admin List", "Toggle Buttons"
     ]
 
     if await is_admin(user_id):
-        # If admin is in middle of an action input
         if context.user_data.get('admin_action'):
             await handle_admin_action_input(update, context, text)
             return
-        # Admin Panel button pressed
         if text == "Admin Panel":
             await handle_admin_panel_menu(update, context)
             return
-        # If admin clicked an admin panel button
         if text in admin_buttons or context.user_data.get('in_admin'):
             context.user_data['in_admin'] = True
             await handle_admin_text(update, context, text)
             return
 
-    # Regular user flow
     await button_handler(update, context)
 
 
 # ===================== BUTTON HANDLER =====================
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Group/supergroup me kuch nahi karo - silently ignore
     if update.effective_chat and update.effective_chat.type in ("group", "supergroup"):
         return
 
     text = update.message.text
     user_id = update.effective_user.id
 
-    # Admin panel sub-actions (admin only)
     if await is_admin(user_id) and context.user_data.get('admin_action'):
         await handle_admin_action_input(update, context, text)
         return
@@ -677,7 +657,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await send_join_message(update, user_id)
         return
 
-    # Admin bypass verification
     if not await is_admin(user_id):
         verify_on = await get_setting("verification_enabled", "1")
         if verify_on == "1":
@@ -744,7 +723,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await update.message.reply_text(
                 "🌟 Please use reply keyboard button",
-                reply_markup=get_user_keyboard(user_id)
+                reply_markup=await get_user_keyboard_async(user_id)
             )
 
 
@@ -767,7 +746,6 @@ async def handle_admin_action_input(update: Update, context: ContextTypes.DEFAUL
 
     action = context.user_data.get('admin_action')
 
-    # Allow returning to admin panel or main menu mid-action
     if text == "Back To Menu":
         context.user_data.clear()
         await send_main_menu(update, update.effective_user.first_name, user_id)
@@ -907,7 +885,6 @@ async def handle_admin_action_input(update: Update, context: ContextTypes.DEFAUL
             rows = await (await db.execute("SELECT user_id FROM users")).fetchall()
         bot = update.get_bot()
         sent = 0
-        # 25 users ek saath bhejo - fast aur Telegram rate limit safe
         BATCH = 25
         user_ids = [r[0] for r in rows]
         for i in range(0, len(user_ids), BATCH):
@@ -917,7 +894,7 @@ async def handle_admin_action_input(update: Update, context: ContextTypes.DEFAUL
                 return_exceptions=True
             )
             sent += sum(1 for r in results if not isinstance(r, Exception))
-            await asyncio.sleep(0.5)  # batch ke beech 0.5s
+            await asyncio.sleep(0.5) 
         await update.message.reply_text(f"✅ Broadcast Sent To {sent} Users.", reply_markup=get_admin_keyboard())
         context.user_data['admin_action'] = None
 
@@ -1153,7 +1130,23 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     if not await is_admin(user_id):
         return
 
-    if text == "Total Users":
+    if text == "Toggle Buttons":
+        keyboard = [
+            [InlineKeyboardButton("Balance: " + ("✅ SHOW" if await get_setting("btn_balance", "1") == "1" else "❌ HIDE"), callback_data="tog_btn_balance")],
+            [InlineKeyboardButton("Refer & Earn: " + ("✅ SHOW" if await get_setting("btn_refer", "1") == "1" else "❌ HIDE"), callback_data="tog_btn_refer")],
+            [InlineKeyboardButton("Bonus: " + ("✅ SHOW" if await get_setting("btn_bonus", "1") == "1" else "❌ HIDE"), callback_data="tog_btn_bonus")],
+            [InlineKeyboardButton("Withdraw: " + ("✅ SHOW" if await get_setting("btn_withdraw", "1") == "1" else "❌ HIDE"), callback_data="tog_btn_withdraw")],
+            [InlineKeyboardButton("Link UPI: " + ("✅ SHOW" if await get_setting("btn_link_upi", "1") == "1" else "❌ HIDE"), callback_data="tog_btn_link_upi")],
+            [InlineKeyboardButton("Link VSV Wallet: " + ("✅ SHOW" if await get_setting("btn_link_vsv", "1") == "1" else "❌ HIDE"), callback_data="tog_btn_link_vsv")],
+            [InlineKeyboardButton("Redeem Code: " + ("✅ SHOW" if await get_setting("btn_redeem", "1") == "1" else "❌ HIDE"), callback_data="tog_btn_redeem")],
+        ]
+        await update.message.reply_text(
+            "👁️ *TOGGLE USER BUTTONS*\n\nClick on any button below to hide or show it on the user's keyboard. (Changes take effect when user restarts bot or completes an action).",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode="Markdown"
+        )
+
+    elif text == "Total Users":
         async with turso_connect() as db:
             total = int((await (await db.execute("SELECT COUNT(*) FROM users")).fetchone())[0])
             verified = int((await (await db.execute("SELECT COUNT(*) FROM users WHERE is_verified=1")).fetchone())[0])
@@ -1545,8 +1538,6 @@ async def handle_withdraw(update, user_id, context):
     min_withdrawal = float(await get_setting("min_withdrawal", "50"))
 
     if balance < min_withdrawal:
-        bal_str = f"{balance:.2f}".replace(".", "\\.")
-        min_str = f"{min_withdrawal:.0f}".replace(".", "\\.")
         await update.message.reply_text(
             f"😵 INSUFFICIENT BALANCE — Minimum Withdrawal Is Rs.{min_withdrawal:.0f}"
         )
@@ -1607,12 +1598,10 @@ async def handle_withdraw_amount(update, user_id, context, text):
 
     context.user_data['waiting_for'] = None
 
-    # ---- VSV: Automatic transaction ----
     if method == 'vsv' and vsv_wallet:
         async with turso_connect() as db:
             await db.execute("UPDATE user_balance SET balance = balance - ? WHERE user_id=?", (amount, user_id))
             await db.commit()
-        # Process VSV payment automatically
         try:
             async with httpx.AsyncClient() as client:
                 resp = await client.get(
@@ -1635,7 +1624,6 @@ async def handle_withdraw_amount(update, user_id, context, text):
                     parse_mode="Markdown"
                 )
             else:
-                # Refund if failed
                 async with turso_connect() as db:
                     await db.execute("UPDATE user_balance SET balance = balance + ? WHERE user_id=?", (amount, user_id))
                     await db.commit()
@@ -1644,7 +1632,6 @@ async def handle_withdraw_amount(update, user_id, context, text):
                     parse_mode="Markdown"
                 )
         except Exception as e:
-            # Refund on error
             async with turso_connect() as db:
                 await db.execute("UPDATE user_balance SET balance = balance + ? WHERE user_id=?", (amount, user_id))
                 await db.commit()
@@ -1653,7 +1640,6 @@ async def handle_withdraw_amount(update, user_id, context, text):
                 parse_mode="Markdown"
             )
 
-    # ---- UPI: Admin approval required ----
     elif method == 'upi' and upi_id:
         async with turso_connect() as db:
             await db.execute("UPDATE user_balance SET balance = balance - ? WHERE user_id=?", (amount, user_id))
@@ -1726,7 +1712,6 @@ async def handle_leaderboard(update):
             rank_emoji = rank_emojis[i] if i < len(rank_emojis) else f"{i+1}."
             msg += f"{rank_emoji} Top {i+1}:\nUser ID: {masked_id}\nVerified Refers: {r[1]}\n\n"
 
-    # Check if called from callback query or message
     if hasattr(update, 'message') and update.message:
         await update.message.reply_text(msg)
     else:
@@ -1802,7 +1787,6 @@ async def handle_redeem_finalize(update, user_id, context, mobile):
         )
         await db.commit()
 
-    # Numeric DB id fetch karo approve ke liye
     async with turso_connect() as db2:
         id_row = await (await db2.execute("SELECT id FROM redeem_codes WHERE code=?", (unique_code,))).fetchone()
     numeric_id = id_row[0] if id_row else "?"
@@ -1849,7 +1833,6 @@ async def handle_redeem_use(update, user_id, code):
             await update.message.reply_text("❌ This Gift Code Is Not Active Yet.")
             return
         amount = row[1]
-        # Instantly expire the code
         await db.execute("UPDATE redeem_codes SET status='used' WHERE id=?", (row[0],))
         await db.execute("UPDATE user_balance SET balance = balance + ? WHERE user_id=?", (amount, user_id))
         await db.commit()
@@ -1870,7 +1853,27 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "check_join":
         await check_join_callback(update, context)
 
-    # ---- REFER & EARN inline buttons ----
+    # ---- ADMIN TOGGLE BUTTONS ----
+    elif data.startswith("tog_btn_"):
+        key = data.replace("tog_", "")
+        current_val = await get_setting(key, "1")
+        new_val = "0" if current_val == "1" else "1"
+        await set_setting(key, new_val)
+
+        keyboard = [
+            [InlineKeyboardButton("Balance: " + ("✅ SHOW" if await get_setting("btn_balance", "1") == "1" else "❌ HIDE"), callback_data="tog_btn_balance")],
+            [InlineKeyboardButton("Refer & Earn: " + ("✅ SHOW" if await get_setting("btn_refer", "1") == "1" else "❌ HIDE"), callback_data="tog_btn_refer")],
+            [InlineKeyboardButton("Bonus: " + ("✅ SHOW" if await get_setting("btn_bonus", "1") == "1" else "❌ HIDE"), callback_data="tog_btn_bonus")],
+            [InlineKeyboardButton("Withdraw: " + ("✅ SHOW" if await get_setting("btn_withdraw", "1") == "1" else "❌ HIDE"), callback_data="tog_btn_withdraw")],
+            [InlineKeyboardButton("Link UPI: " + ("✅ SHOW" if await get_setting("btn_link_upi", "1") == "1" else "❌ HIDE"), callback_data="tog_btn_link_upi")],
+            [InlineKeyboardButton("Link VSV Wallet: " + ("✅ SHOW" if await get_setting("btn_link_vsv", "1") == "1" else "❌ HIDE"), callback_data="tog_btn_link_vsv")],
+            [InlineKeyboardButton("Redeem Code: " + ("✅ SHOW" if await get_setting("btn_redeem", "1") == "1" else "❌ HIDE"), callback_data="tog_btn_redeem")],
+        ]
+        await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(keyboard))
+        btn_name = key.replace('btn_', '').replace('_', ' ').title()
+        status_text = "Shown" if new_val == "1" else "Hidden"
+        await query.answer(f"{btn_name} Button is now {status_text}!", show_alert=True)
+
     elif data.startswith("refer_invites_"):
         target_uid = int(data.split("_")[-1])
         async with turso_connect() as db:
@@ -1901,9 +1904,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown"
         )
 
-    # ---- BONUS inline buttons ----
     elif data.startswith("bonus_daily_"):
-        # Ignore target_uid from callback data - always use actual caller's ID (security fix)
         target_uid = user_id
         async with turso_connect() as db:
             row = await (await db.execute("SELECT balance, last_bonus_claim FROM user_balance WHERE user_id=?", (target_uid,))).fetchone()
@@ -1923,7 +1924,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         daily_bonus_amount = float(await get_setting("daily_bonus", "0"))
 
-        # If admin has not set daily bonus (0), inform user
         if daily_bonus_amount <= 0:
             await query.message.reply_text(
                 "⏳ *DAILY BONUS*\n\nDaily bonus has not been set by admin yet.\nPlease check back later! 🙏",
@@ -1932,7 +1932,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         async with turso_connect() as db:
-            # Ensure row exists first (fixes admin and any edge case where row is missing)
             await db.execute(
                 "INSERT OR IGNORE INTO user_balance (user_id, balance) VALUES (?, 0.0)",
                 (target_uid,)
@@ -1942,10 +1941,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 (daily_bonus_amount, now, target_uid)
             )
             await db.commit()
-        # Fetch actual updated balance to display correct value
-        async with turso_connect() as db:
-            updated_row = await (await db.execute("SELECT balance FROM user_balance WHERE user_id=?", (target_uid,))).fetchone()
-        new_balance = float(updated_row[0]) if updated_row and updated_row[0] is not None else (float(balance) + daily_bonus_amount)
         bonus_str = f"{daily_bonus_amount:.2f}"
         await query.message.reply_text(
             f"🎁 Bonus Rs.{bonus_str} Claimed Successfully"
@@ -2018,7 +2013,6 @@ async def lifespan(app: FastAPI):
     await init_db()
     await run_bot()
     yield
-    # Cleanup on shutdown
     if _http_client and not _http_client.is_closed:
         await _http_client.aclose()
 
@@ -2061,7 +2055,6 @@ async def verify_device(payload: VerifyRequest, request: Request):
     device_id = payload.device_id
     persistent_id = payload.persistent_id or ""
 
-    # Get real IP address
     client_ip = request.headers.get("X-Forwarded-For", "")
     if client_ip:
         client_ip = client_ip.split(",")[0].strip()
@@ -2071,24 +2064,20 @@ async def verify_device(payload: VerifyRequest, request: Request):
         client_ip = request.client.host or ""
 
     async with turso_connect() as db:
-        # Check 1: Device fingerprint
         row = await (await db.execute("SELECT user_id FROM device_registry WHERE device_id=?", (device_id,))).fetchone()
         if row and row[0] != user_id:
             return {"status": "blocked", "message": "Device already registered."}
 
-        # Check 2: Persistent localStorage ID
         if persistent_id:
             p_row = await (await db.execute("SELECT user_id FROM persistent_device_registry WHERE persistent_id=?", (persistent_id,))).fetchone()
             if p_row and p_row[0] != user_id:
                 return {"status": "blocked", "message": "Device already registered (persistent)."}
 
-        # Check 3: IP Address
         if client_ip:
             ip_row = await (await db.execute("SELECT user_id FROM ip_registry WHERE ip_address=?", (client_ip,))).fetchone()
             if ip_row and ip_row[0] != user_id:
                 return {"status": "blocked", "message": "IP already registered."}
 
-        # Register all identifiers
         if not row:
             await db.execute("INSERT OR REPLACE INTO device_registry (device_id, user_id) VALUES (?, ?)", (device_id, user_id))
         if persistent_id and not (p_row if persistent_id else None):
@@ -2097,7 +2086,6 @@ async def verify_device(payload: VerifyRequest, request: Request):
             await db.execute("INSERT OR REPLACE INTO ip_registry (ip_address, user_id) VALUES (?, ?)", (client_ip, user_id))
         now = datetime.utcnow().isoformat()
 
-        # Check if already verified (to avoid double bonus)
         already_verified = await (await db.execute("SELECT is_verified FROM users WHERE user_id=?", (user_id,))).fetchone()
         was_verified = int(already_verified[0]) if already_verified and already_verified[0] is not None else 0
 
@@ -2110,18 +2098,15 @@ async def verify_device(payload: VerifyRequest, request: Request):
 
         existing_balance = await (await db.execute("SELECT balance FROM user_balance WHERE user_id=?", (user_id,))).fetchone()
 
-        # Ensure balance row exists - insert with 0 only, do not touch existing row
         if not existing_balance:
             await db.execute("INSERT OR IGNORE INTO user_balance (user_id, balance) VALUES (?,?)", (user_id, 0.0))
             await db.commit()
 
-        # No welcome bonus on verification - user earns balance only by claiming daily bonus
         referrer_to_notify = None
         referrer_reward_amount = 0.0
 
         await db.commit()
 
-    # Referral bonus - use completely separate connection
     if was_verified == 0:
         async with turso_connect() as db2:
             referrer_row = await (await db2.execute(
@@ -2133,7 +2118,6 @@ async def verify_device(payload: VerifyRequest, request: Request):
             referrer_id_val = int(referrer_row[0])
             refer_reward = float(await get_setting("refer_reward", "5"))
             async with turso_connect() as db3:
-                # Ensure referrer's balance row exists (works for admin too)
                 await db3.execute(
                     "INSERT OR IGNORE INTO user_balance (user_id, balance) VALUES (?, 0.0)",
                     (referrer_id_val,)
@@ -2148,10 +2132,8 @@ async def verify_device(payload: VerifyRequest, request: Request):
             referrer_reward_amount = refer_reward
 
 
-    # Notify referrer if applicable
     if referrer_to_notify:
         try:
-            # Get referrer updated balance
             reward_str = f"{referrer_reward_amount:.2f}".replace(".", "\\.")
             await bot_app_global.bot.send_message(
                 chat_id=referrer_to_notify,
@@ -2164,17 +2146,14 @@ async def verify_device(payload: VerifyRequest, request: Request):
         except Exception as e:
             logger.error(f"Referrer notify error: {e}")
 
-    # Bot se directly user ko main menu bhejo
     first_name = user_data.get("first_name", "User")
     try:
-        keyboard = get_user_keyboard(user_id)
-        # Message 1: Verification success (alag)
+        keyboard = await get_user_keyboard_async(user_id)
         await bot_app_global.bot.send_message(
             chat_id=user_id,
             text="✅ *Device Verified Successfully!*",
             parse_mode="Markdown"
         )
-        # Message 2: Welcome with keyboard
         await bot_app_global.bot.send_message(
             chat_id=user_id,
             text=f"😍 Welcome, *{first_name}*!\n\n💸 Earn Money • Refer Friends • Withdraw Instantly\n\n👇 Use button below to get started",
@@ -2231,3 +2210,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
