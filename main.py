@@ -521,14 +521,12 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if is_verified == 1:
         await send_main_menu(update, user.first_name, user.id)
     else:
-        keyboard = [[InlineKeyboardButton("🔐 Verify Device", web_app=WebAppInfo(url=WEBAPP_URL))]]
+        keyboard = [[InlineKeyboardButton("🟢 Verify Yourself", web_app=WebAppInfo(url=WEBAPP_URL))]]
         await update.message.reply_text(
-            "🔐 Verify Yourself To Start Bot\n\n"
-            "🔒 *Verify Yourself*",
+            "🔐 *Verify Yourself To Start Bot*",
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode="Markdown"
         )
-
 
 async def check_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
