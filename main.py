@@ -544,14 +544,26 @@ async def check_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
             chat_id = ch[5] if len(ch) > 5 else None
             if not chat_id:
                 continue
+            
+            is_member = False
             try:
                 member = await context.bot.get_chat_member(chat_id=chat_id, user_id=user.id)
-                if member.status not in ["member", "administrator", "creator"]:
-                    not_joined.append(ch[3] or ch[1])
+                if member.status in ["member", "administrator", "creator"]:
+                    is_member = True
             except Exception as e:
                 logger.error(f"Private channel check error: {e}")
+            
+            # Check for Pending Request
+            if not is_member:
+                async with turso_connect() as db:
+                    row = await (await db.execute("SELECT 1 FROM channel_join_requests WHERE user_id=? AND channel_id=?", (user.id, chat_id))).fetchone()
+                    if row:
+                        is_member = True
+                        
+            if not is_member:
                 not_joined.append(ch[3] or ch[1])
             continue
+        
         try:
             member = await context.bot.get_chat_member(chat_id=f"@{ch[1]}", user_id=user.id)
             if member.status not in ["member", "administrator", "creator"]:
@@ -571,7 +583,6 @@ async def check_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
         context.user_data["not_joined_msg_ids"] = [sent.message_id]
         return
-    is_member = True
 
     async with turso_connect() as db:
         row = await (await db.execute("SELECT is_verified FROM users WHERE user_id = ?", (user.id,))).fetchone()
@@ -588,8 +599,9 @@ async def check_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
             await query.message.delete()
         except:
             pass
+        safe_name = str(user.first_name).replace("_", "\\_").replace("*", "\\*").replace("[", "\\[").replace("`", "\\`")
         await query.message.reply_text(
-            f"😍 Welcome, *{user.first_name}*!\n\n💸 Earn Money • Refer Friends • Withdraw Instantly\n\n👇 Use button below to get started",
+            f"😍 Welcome, *{safe_name}*!\n\n💸 Earn Money • Refer Friends • Withdraw Instantly\n\n👇 Use button below to get started",
             reply_markup=await get_user_keyboard_async(user.id),
             parse_mode="Markdown"
         )
