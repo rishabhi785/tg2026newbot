@@ -455,7 +455,6 @@ async def send_main_menu(update: Update, name: str, user_id: int):
     )
 
 # ===================== COMMAND HANDLERS =====================
-
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat and update.effective_chat.type in ("group", "supergroup"):
         return
@@ -493,10 +492,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             is_verified = 1
         await db.commit()
 
+    # Admin bypass logic (Optimized)
     if await is_admin(user.id):
-        async with turso_connect() as dbadmin:
-            await dbadmin.execute("UPDATE users SET is_verified=1 WHERE user_id=?", (user.id,))
-            await dbadmin.commit()
         await send_main_menu(update, user.first_name, user.id)
         return
 
@@ -505,7 +502,10 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await send_join_message(update, user.id)
         return
 
-    if is_verified == 1:
+    # FIX: Admin verification setting check
+    verify_on = await get_setting("verification_enabled", "1")
+
+    if is_verified == 1 or verify_on == "0":
         await send_main_menu(update, user.first_name, user.id)
     else:
         keyboard = [[InlineKeyboardButton("🔐 Verify Device", web_app=WebAppInfo(url=WEBAPP_URL))]]
@@ -515,79 +515,6 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode="Markdown"
         )
-
-
-async def check_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    user = update.effective_user
-
-    channels = await get_active_channels()
-    not_joined = []
-    for ch in channels:
-        ch_type = ch[4] if len(ch) > 4 else 'public'
-        if ch_type == 'link_only':
-            continue
-        if ch_type == 'private':
-            chat_id = ch[5] if len(ch) > 5 else None
-            if not chat_id:
-                continue
-            try:
-                member = await context.bot.get_chat_member(chat_id=chat_id, user_id=user.id)
-                if member.status not in ["member", "administrator", "creator"]:
-                    not_joined.append(ch[3] or ch[1])
-            except Exception as e:
-                logger.error(f"Private channel check error: {e}")
-                not_joined.append(ch[3] or ch[1])
-            continue
-        try:
-            member = await context.bot.get_chat_member(chat_id=f"@{ch[1]}", user_id=user.id)
-            if member.status not in ["member", "administrator", "creator"]:
-                not_joined.append(ch[3] or ch[1])
-        except:
-            not_joined.append(ch[3] or ch[1])
-
-    if not_joined:
-        await query.answer()
-        for old_msg_id in context.user_data.get("not_joined_msg_ids", []):
-            try:
-                await context.bot.delete_message(chat_id=user.id, message_id=old_msg_id)
-            except:
-                pass
-        sent = await query.message.reply_text(
-            "🙆 YOU DIDN'T JOIN ALL CHANNELS"
-        )
-        context.user_data["not_joined_msg_ids"] = [sent.message_id]
-        return
-    is_member = True
-
-    async with turso_connect() as db:
-        row = await (await db.execute("SELECT is_verified FROM users WHERE user_id = ?", (user.id,))).fetchone()
-        is_verified = int(row[0]) if row and row[0] is not None else 0
-
-    for old_msg_id in context.user_data.pop("not_joined_msg_ids", []):
-        try:
-            await context.bot.delete_message(chat_id=user.id, message_id=old_msg_id)
-        except:
-            pass
-
-    if is_verified == 1:
-        try:
-            await query.message.delete()
-        except:
-            pass
-        await query.message.reply_text(
-            f"😍 Welcome, *{user.first_name}*!\n\n💸 Earn Money • Refer Friends • Withdraw Instantly\n\n👇 Use button below to get started",
-            reply_markup=await get_user_keyboard_async(user.id),
-            parse_mode="Markdown"
-        )
-    else:
-        keyboard = [[InlineKeyboardButton("🔐 Verify Device", web_app=WebAppInfo(url=WEBAPP_URL))]]
-        await query.edit_message_text(
-            "🔒 *Verify Yourself*",
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode="Markdown"
-        )
-
 
 async def web_app_data_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = update.message.web_app_data.data
