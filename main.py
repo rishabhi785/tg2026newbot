@@ -355,13 +355,16 @@ async def chat_join_request_handler(update: Update, context: ContextTypes.DEFAUL
         return
     user_id = req.from_user.id
     channel_id = req.chat.id
+    
+    # Sirf database me save karega ki request aayi hai (approve nahi karega)
     async with turso_connect() as db:
         await db.execute(
             "INSERT OR REPLACE INTO channel_join_requests (user_id, channel_id, requested_at) VALUES (?, ?, ?)",
             (user_id, channel_id, datetime.utcnow().isoformat())
         )
         await db.commit()
-    logger.info(f"Join request saved: user={user_id} channel={channel_id}")
+        
+    logger.info(f"Join request saved (Pending Approval): user={user_id} channel={channel_id}")
 
 
 async def send_join_message(update, user_id: int, bot=None):
