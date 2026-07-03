@@ -29,7 +29,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.getenv("PORT", "8000"))
 
 TURSO_HTTP_URL = "https://botdb-rishabhi785.aws-ap-south-1.turso.io/v2/pipeline"
-TURSO_TOKEN = "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3Nzk3MDA0NTIsImlkIjoiMDE5ZTVlNjctNzIwMS03OTQwLWI3YTUtMjUxZmI5ZTQ4YTY2IiwicmlkIjoiZGQxNGI2NWItZjI4MC00YmNjLTk5MzgtNzA4NWEwYzQ4ZjJiZjU1MzI5YWJlOSJ9.1uBpnSQhPDAfoLE8XCkhP_uQWp3i0egA6UXsQXhsGFQXh2VrODIt07FRj4v2edrAcRwVRe"
+TURSO_TOKEN = "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3Nzk3MDA0NTIsImlkIjoiMDE5ZTVlNjctNzIwMS03OTQwLWI3YTUtMjUxZmI5ZTQ4YTY2IiwicmlkIjoiZGQxNGI2NWItZjI4MC00YmNjLTk5MzgtNzA4NWEwYzQ4ZjJiZjU1MzI5YWJlOSJ9.1uBpnSQhPDAfoLE8XCkhP_uQWp3i0egJA6UXsQXhsGFQXh2VrODIt07FRj4v2edrAcRwVRe"
 
 # ---- Turso HTTP API wrapper ----
 class TursoCursor:
@@ -377,9 +377,9 @@ async def send_join_message(update, user_id: int, bot=None):
         keyboard.append(row)
     keyboard.append([InlineKeyboardButton("✅ CLAIM", callback_data="check_join")])
     text = (
-        "👋 Hey There! Welcome To Bot!!\n\n"
-        "🎉 Join The Channels Below To Continue\n\n"
-        "✨ After Joining Click Claim"
+        "👑 Hey There! Welcome To Bot!!\n\n"
+        "⚪️ Join The Channels Below To Continue\n\n"
+        "😍 After Joining Click Claim"
     )
     try:
         if hasattr(update, 'message') and update.message:
@@ -400,41 +400,41 @@ async def get_user_keyboard_async(user_id: int):
     b_red = await get_setting("btn_redeem", "1")
 
     buttons = []
-    if b_bal == "1": buttons.append(KeyboardButton("💰Balance"))
-    if b_ref == "1": buttons.append(KeyboardButton("Refer & Earn"))
-    if b_bon == "1": buttons.append(KeyboardButton("🎁Bonus"))
-    if b_wit == "1": buttons.append(KeyboardButton("Withdraw"))
-    if b_upi == "1": buttons.append(KeyboardButton("Link UPI"))
-    if b_wal == "1": buttons.append(KeyboardButton("Link Wallet"))
-    if b_red == "1": buttons.append(KeyboardButton("Redeem Code"))
+    if b_bal == "1": buttons.append(KeyboardButton("💸 Balance"))
+    if b_ref == "1": buttons.append(KeyboardButton("👥 Refer & Earn"))
+    if b_bon == "1": buttons.append(KeyboardButton("🎁 Bonus"))
+    if b_wit == "1": buttons.append(KeyboardButton("💳 Withdraw"))
+    if b_upi == "1": buttons.append(KeyboardButton("🏦 Link UPI"))
+    if b_wal == "1": buttons.append(KeyboardButton("💼 Link Wallet"))
+    if b_red == "1": buttons.append(KeyboardButton("🎟️ Redeem Code"))
 
     rows = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
 
     if await is_admin(user_id):
-        rows.append([KeyboardButton("Admin Panel")])
+        rows.append([KeyboardButton("⚙️ Admin Panel")])
         
     return ReplyKeyboardMarkup(rows, resize_keyboard=True, one_time_keyboard=False)
 
 
 def get_admin_keyboard():
     rows = [
-        [KeyboardButton("Total Users"), KeyboardButton("Withdrawal Requests")],
-        [KeyboardButton("Add Channel"), KeyboardButton("Add Private Channel"), KeyboardButton("Add Link Only")],
-        [KeyboardButton("Remove Channel")],
-        [KeyboardButton("Update Channel"), KeyboardButton("Broadcast Message")],
-        [KeyboardButton("Set Refer Reward"), KeyboardButton("Set Min Withdrawal")],
-        [KeyboardButton("Set Daily Bonus")],
-        [KeyboardButton("Withdraw ON/OFF"), KeyboardButton("UPI Withdraw ON/OFF")],
-        [KeyboardButton("VSV Withdraw ON/OFF"), KeyboardButton("Ultra Pay ON/OFF")],
-        [KeyboardButton("Link Ultra Pay API"), KeyboardButton("Manual Balance")],
-        [KeyboardButton("Verification ON"), KeyboardButton("Verification OFF")],
-        [KeyboardButton("Refer Earn ON"), KeyboardButton("Refer Earn OFF")],
-        [KeyboardButton("Approve withdrawal"), KeyboardButton("Reject Withdrawal")],
-        [KeyboardButton("RDM Requests"), KeyboardButton("Approve RDM"), KeyboardButton("Reject RDM")],
-        [KeyboardButton("Create Gift Code"), KeyboardButton("Toggle Buttons")],
-        [KeyboardButton("Reset Database"), KeyboardButton("Add Admin")],
-        [KeyboardButton("Remove Admin"), KeyboardButton("Admin List")],
-        [KeyboardButton("Back To Menu")],
+        [KeyboardButton("👥 Total Users"), KeyboardButton("💰 Withdrawal Requests")],
+        [KeyboardButton("➕ Add Channel"), KeyboardButton("🔒 Add Private"), KeyboardButton("🔗 Add Link")],
+        [KeyboardButton("❌ Remove Channel")],
+        [KeyboardButton("✏️ Update Channel"), KeyboardButton("📣 Broadcast")],
+        [KeyboardButton("💵 Refer Reward"), KeyboardButton("🔻 Min Withdrawal")],
+        [KeyboardButton("🎁 Daily Bonus")],
+        [KeyboardButton("💸 Withdraw ON/OFF"), KeyboardButton("🏦 UPI ON/OFF")],
+        [KeyboardButton("💳 VSV ON/OFF"), KeyboardButton("⚡ Ultra Pay ON/OFF")],
+        [KeyboardButton("🔗 Link Ultra API"), KeyboardButton("✏️ Manual Balance")],
+        [KeyboardButton("✅ Verification ON"), KeyboardButton("❌ Verification OFF")],
+        [KeyboardButton("✅ Refer Earn ON"), KeyboardButton("❌ Refer Earn OFF")],
+        [KeyboardButton("✅ Approve"), KeyboardButton("❌ Reject")],
+        [KeyboardButton("📋 RDM Requests"), KeyboardButton("✅ Approve RDM"), KeyboardButton("❌ Reject RDM")],
+        [KeyboardButton("🎁 Gift Code"), KeyboardButton("👁️ Toggle Buttons")],
+        [KeyboardButton("⚠️ Reset DB"), KeyboardButton("👤 Add Admin")],
+        [KeyboardButton("🚫 Remove Admin"), KeyboardButton("📋 Admin List")],
+        [KeyboardButton("🏠 Back To Menu")],
     ]
     return ReplyKeyboardMarkup(rows, resize_keyboard=True, one_time_keyboard=False)
 
@@ -568,23 +568,23 @@ async def combined_message_handler(update: Update, context: ContextTypes.DEFAULT
     user_id = update.effective_user.id
     text = update.message.text
 
-    if text == "💰Balance":
+    if text == "💸 Balance":
         await handle_balance(update, user_id)
-    elif text == "Refer & Earn":
+    elif text == "👥 Refer & Earn":
         await handle_refer_earn(update, user_id, context)
-    elif text == "🎁Bonus":
+    elif text == "🎁 Bonus":
         await handle_bonus(update, user_id)
-    elif text == "Withdraw":
+    elif text == "💳 Withdraw":
         await handle_withdraw(update, user_id, context)
-    elif text == "Link UPI":
+    elif text == "🏦 Link UPI":
         context.user_data['waiting_for_upi'] = True
         await update.message.reply_text("📱 Please enter your UPI ID (e.g., name@bank):")
-    elif text == "Link Wallet":
+    elif text == "💼 Link Wallet":
         context.user_data['waiting_for_wallet'] = True
         await update.message.reply_text("📱 Please enter your wallet/phone number:")
-    elif text == "Redeem Code":
+    elif text == "🎟️ Redeem Code":
         await handle_redeem_code_menu(update, user_id, context)
-    elif text == "Admin Panel":
+    elif text == "⚙️ Admin Panel":
         if await is_admin(user_id):
             await handle_admin_panel_menu(update, context)
     elif context.user_data.get('waiting_for_upi'):
@@ -593,8 +593,6 @@ async def combined_message_handler(update: Update, context: ContextTypes.DEFAULT
     elif context.user_data.get('waiting_for_wallet'):
         context.user_data['waiting_for_wallet'] = False
         await handle_vsv_link(update, user_id, text)
-    elif await is_admin(user_id):
-        await handle_admin_text(update, context, text)
 
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -633,12 +631,12 @@ async def handle_admin_action_input(update: Update, context: ContextTypes.DEFAUL
 async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
     user_id = update.effective_user.id
     
-    if text == "Total Users":
+    if text == "👥 Total Users":
         async with turso_connect() as db:
             row = await (await db.execute("SELECT COUNT(*) FROM users")).fetchone()
         total = row[0] if row else 0
         await update.message.reply_text(f"👥 Total Users: {total}")
-    elif text == "Withdrawal Requests":
+    elif text == "💰 Withdrawal Requests":
         async with turso_connect() as db:
             rows = await (await db.execute("SELECT user_id, amount, method, status FROM withdrawal_requests ORDER BY created_at DESC LIMIT 10")).fetchall()
         if rows:
@@ -648,13 +646,13 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE, 
             await update.message.reply_text(msg)
         else:
             await update.message.reply_text("No withdrawal requests yet")
-    elif text == "Add Channel":
+    elif text == "➕ Add Channel":
         context.user_data["waiting_action"] = "add_channel"
         await update.message.reply_text("📝 Enter channel details: username|link|name")
-    elif text == "Back To Menu":
+    elif text == "🏠 Back To Menu":
         keyboard = await get_user_keyboard_async(user_id)
         await update.message.reply_text("🏠 Back to main menu", reply_markup=keyboard)
-    elif text == "Manual Balance":
+    elif text == "✏️ Manual Balance":
         context.user_data["waiting_action"] = "manual_balance"
         await update.message.reply_text("👤 Enter user ID:")
     else:
