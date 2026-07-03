@@ -604,9 +604,9 @@ async def check_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
             parse_mode="Markdown"
         )
     else:
-        keyboard = [[InlineKeyboardButton("🔐 Verify Device", web_app=WebAppInfo(url=WEBAPP_URL))]]
+        keyboard = [[InlineKeyboardButton("🟢 Verify Yourself", web_app=WebAppInfo(url=WEBAPP_URL))]]
         await query.edit_message_text(
-            "🔒 *Verify Yourself*",
+            "🔐 *Verify Yourself To Start Bot*",
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode="Markdown"
         )
