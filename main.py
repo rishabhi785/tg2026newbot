@@ -445,12 +445,14 @@ def get_admin_keyboard():
 
 
 async def send_main_menu(update: Update, name: str, user_id: int):
+    # Name ko safe banayein taaki Markdown break na ho
+    safe_name = str(name).replace("_", "\\_").replace("*", "\\*").replace("[", "\\[").replace("`", "\\`")
+    
     await update.message.reply_text(
-        f"😍 Welcome, *{name}*!\n\n💸 Earn Money • Refer Friends • Withdraw Instantly\n\n👇 Use button below to get started",
+        f"😍 Welcome, *{safe_name}*!\n\n💸 Earn Money • Refer Friends • Withdraw Instantly\n\n👇 Use button below to get started",
         reply_markup=await get_user_keyboard_async(user_id),
         parse_mode="Markdown"
     )
-
 
 # ===================== COMMAND HANDLERS =====================
 
