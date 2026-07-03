@@ -340,18 +340,16 @@ async def check_all_channels(bot, user_id: int) -> bool:
             except Exception as e:
                 logger.error(f"Private channel check error: {e}")
             
-            # API ne member nahi bataya? Toh check karo kya request pending hai
             if not is_member:
                 async with turso_connect() as db:
                     row = await (await db.execute("SELECT 1 FROM channel_join_requests WHERE user_id=? AND channel_id=?", (user_id, chat_id))).fetchone()
                     if row:
-                        is_member = True  # Request bheji hai, toh allow kar do
+                        is_member = True  
                         
             if not is_member:
                 return False
             continue
         
-        # Public Channel Logic
         try:
             member = await bot.get_chat_member(chat_id=f"@{ch[1]}", user_id=user_id)
             if member.status not in ["member", "administrator", "creator"]:
@@ -368,7 +366,6 @@ async def chat_join_request_handler(update: Update, context: ContextTypes.DEFAUL
     user_id = req.from_user.id
     channel_id = req.chat.id
     
-    # Sirf database me save karega ki request aayi hai (approve nahi karega)
     async with turso_connect() as db:
         await db.execute(
             "INSERT OR REPLACE INTO channel_join_requests (user_id, channel_id, requested_at) VALUES (?, ?, ?)",
@@ -407,7 +404,6 @@ async def send_join_message(update, user_id: int, bot=None):
 
 
 async def get_user_keyboard_async(user_id: int):
-    # Fetch real-time visibility settings from DB
     b_bal = await get_setting("btn_balance", "1")
     b_ref = await get_setting("btn_refer", "1")
     b_bon = await get_setting("btn_bonus", "1")
@@ -416,7 +412,6 @@ async def get_user_keyboard_async(user_id: int):
     b_wal = await get_setting("btn_link_wallet", "1")
     b_red = await get_setting("btn_redeem", "1")
 
-    # Add only visible buttons
     buttons = []
     if b_bal == "1": buttons.append(KeyboardButton("Balance"))
     if b_ref == "1": buttons.append(KeyboardButton("Refer & Earn"))
@@ -426,10 +421,8 @@ async def get_user_keyboard_async(user_id: int):
     if b_wal == "1": buttons.append(KeyboardButton("Link Wallet"))
     if b_red == "1": buttons.append(KeyboardButton("Redeem Code"))
 
-    # Arrange buttons in rows of 2
     rows = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
 
-    # Admins ke liye Admin Panel button dikhao
     if await is_admin(user_id):
         rows.append([KeyboardButton("Admin Panel")])
         
@@ -460,8 +453,10 @@ def get_admin_keyboard():
 
 
 async def send_main_menu(update: Update, name: str, user_id: int):
+    # FIX: Markdown Name Error Protection
+    safe_name = str(name).replace("_", "\\_").replace("*", "\\*").replace("[", "\\[").replace("`", "\\`")
     await update.message.reply_text(
-        f"😍 Welcome, *{name}*!\n\n💸 Earn Money • Refer Friends • Withdraw Instantly\n\n👇 Use button below to get started",
+        f"😍 Welcome, *{safe_name}*!\n\n💸 Earn Money • Refer Friends • Withdraw Instantly\n\n👇 Use button below to get started",
         reply_markup=await get_user_keyboard_async(user_id),
         parse_mode="Markdown"
     )
@@ -518,7 +513,10 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await send_join_message(update, user.id)
         return
 
-    if is_verified == 1:
+    # FIX: Check Admin Verification Setting
+    verify_on = await get_setting("verification_enabled", "1")
+
+    if is_verified == 1 or verify_on == "0":
         await send_main_menu(update, user.first_name, user.id)
     else:
         keyboard = [[InlineKeyboardButton("🟢 Verify Yourself", web_app=WebAppInfo(url=WEBAPP_URL))]]
@@ -527,6 +525,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode="Markdown"
         )
+
 
 async def check_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -551,7 +550,6 @@ async def check_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
             except Exception as e:
                 logger.error(f"Private channel check error: {e}")
             
-            # Check for Pending Request
             if not is_member:
                 async with turso_connect() as db:
                     row = await (await db.execute("SELECT 1 FROM channel_join_requests WHERE user_id=? AND channel_id=?", (user.id, chat_id))).fetchone()
@@ -581,6 +579,7 @@ async def check_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
         context.user_data["not_joined_msg_ids"] = [sent.message_id]
         return
+    is_member = True
 
     async with turso_connect() as db:
         row = await (await db.execute("SELECT is_verified FROM users WHERE user_id = ?", (user.id,))).fetchone()
@@ -597,6 +596,7 @@ async def check_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
             await query.message.delete()
         except:
             pass
+        # FIX: Markdown Name Error Protection
         safe_name = str(user.first_name).replace("_", "\\_").replace("*", "\\*").replace("[", "\\[").replace("`", "\\`")
         await query.message.reply_text(
             f"😍 Welcome, *{safe_name}*!\n\n💸 Earn Money • Refer Friends • Withdraw Instantly\n\n👇 Use button below to get started",
@@ -2308,6 +2308,9 @@ async def verify_device(payload: VerifyRequest, request: Request):
             logger.error(f"Referrer notify error: {e}")
 
     first_name = user_data.get("first_name", "User")
+    # FIX: Markdown error fix
+    safe_first_name = str(first_name).replace("_", "\\_").replace("*", "\\*").replace("[", "\\[").replace("`", "\\`")
+    
     try:
         keyboard = await get_user_keyboard_async(user_id)
         await bot_app_global.bot.send_message(
@@ -2317,7 +2320,7 @@ async def verify_device(payload: VerifyRequest, request: Request):
         )
         await bot_app_global.bot.send_message(
             chat_id=user_id,
-            text=f"😍 Welcome, *{first_name}*!\n\n💸 Earn Money • Refer Friends • Withdraw Instantly\n\n👇 Use button below to get started",
+            text=f"😍 Welcome, *{safe_first_name}*!\n\n💸 Earn Money • Refer Friends • Withdraw Instantly\n\n👇 Use button below to get started",
             parse_mode="Markdown",
             reply_markup=keyboard
         )
