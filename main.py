@@ -331,14 +331,27 @@ async def check_all_channels(bot, user_id: int) -> bool:
             chat_id = ch[5] if len(ch) > 5 else None
             if not chat_id:
                 continue
+            
+            is_member = False
             try:
                 member = await bot.get_chat_member(chat_id=chat_id, user_id=user_id)
-                if member.status not in ["member", "administrator", "creator"]:
-                    return False
+                if member.status in ["member", "administrator", "creator"]:
+                    is_member = True
             except Exception as e:
                 logger.error(f"Private channel check error: {e}")
+            
+            # API ne member nahi bataya? Toh check karo kya request pending hai
+            if not is_member:
+                async with turso_connect() as db:
+                    row = await (await db.execute("SELECT 1 FROM channel_join_requests WHERE user_id=? AND channel_id=?", (user_id, chat_id))).fetchone()
+                    if row:
+                        is_member = True  # Request bheji hai, toh allow kar do
+                        
+            if not is_member:
                 return False
             continue
+        
+        # Public Channel Logic
         try:
             member = await bot.get_chat_member(chat_id=f"@{ch[1]}", user_id=user_id)
             if member.status not in ["member", "administrator", "creator"]:
@@ -347,7 +360,6 @@ async def check_all_channels(bot, user_id: int) -> bool:
             logger.error(f"Channel check error {ch[1]}: {e}")
             return False
     return True
-
 
 async def chat_join_request_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     req = update.chat_join_request
