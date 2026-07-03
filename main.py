@@ -505,12 +505,20 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # FIX: Admin verification setting check
     verify_on = await get_setting("verification_enabled", "1")
 
-    if is_verified == 1 or verify_on == "0":
-        await send_main_menu(update, user.first_name, user.id)
+    if is_verified == 1:
+        try:
+            await query.message.delete()
+        except:
+            pass
+        safe_name = str(user.first_name).replace("_", "\\_").replace("*", "\\*").replace("[", "\\[").replace("`", "\\`")
+        await query.message.reply_text(
+            f"😍 Welcome, *{safe_name}*!\n\n💸 Earn Money • Refer Friends • Withdraw Instantly\n\n👇 Use button below to get started",
+            reply_markup=await get_user_keyboard_async(user.id),
+            parse_mode="Markdown"
+        )
     else:
         keyboard = [[InlineKeyboardButton("🔐 Verify Device", web_app=WebAppInfo(url=WEBAPP_URL))]]
-        await update.message.reply_text(
-            "🔐 Verify Yourself To Start Bot\n\n"
+        await query.edit_message_text(
             "🔒 *Verify Yourself*",
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode="Markdown"
