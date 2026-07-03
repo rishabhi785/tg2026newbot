@@ -701,10 +701,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 is_verified = int(row[0]) if row and row[0] is not None else 0
 
             if is_verified != 1:
-                keyboard = [[InlineKeyboardButton("🔐 Verify Device", web_app=WebAppInfo(url=WEBAPP_URL))]]
+                keyboard = [[InlineKeyboardButton("🟢 Verify Yourself", web_app=WebAppInfo(url=WEBAPP_URL))]]
                 await update.message.reply_text(
-                    "🔐 Verify Yourself To Start Bot\n\n"
-                    "🔒 *Verify Yourself*",
+                    "🔐 *Verify Yourself To Start Bot*",
                     reply_markup=InlineKeyboardMarkup(keyboard),
                     parse_mode="Markdown"
                 )
