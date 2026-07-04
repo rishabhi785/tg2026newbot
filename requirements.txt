@@ -1,4 +1,6 @@
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
-python-telegram-bot==21.0
+python-telegram-bot>=22.5
 aiosqlite==0.22.1
+httpx
+pydantic
