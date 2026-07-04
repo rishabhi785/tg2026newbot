@@ -413,10 +413,11 @@ async def get_user_keyboard_async(user_id: int):
     b_red = await get_setting("btn_redeem", "1")
 
     buttons = []
-    if b_bal == "1": buttons.append(KeyboardButton("Balance"))
-    if b_ref == "1": buttons.append(KeyboardButton("Refer & Earn"))
-    if b_bon == "1": buttons.append(KeyboardButton("Bonus"))
-    if b_wit == "1": buttons.append(KeyboardButton("Withdraw"))
+    # YAHAN STYLE ADD KIYA GAYA HAI TEST KARNE KE LIYE 👇
+    if b_bal == "1": buttons.append(KeyboardButton("Balance", style="success"))
+    if b_ref == "1": buttons.append(KeyboardButton("Refer & Earn", style="primary"))
+    if b_bon == "1": buttons.append(KeyboardButton("Bonus", style="success"))
+    if b_wit == "1": buttons.append(KeyboardButton("Withdraw", style="danger"))
     if b_upi == "1": buttons.append(KeyboardButton("Link UPI"))
     if b_wal == "1": buttons.append(KeyboardButton("Link Wallet"))
     if b_red == "1": buttons.append(KeyboardButton("Redeem Code"))
@@ -427,8 +428,6 @@ async def get_user_keyboard_async(user_id: int):
         rows.append([KeyboardButton("Admin Panel")])
         
     return ReplyKeyboardMarkup(rows, resize_keyboard=True, one_time_keyboard=False)
-
-
 def get_admin_keyboard():
     rows = [
         [KeyboardButton("Total Users"), KeyboardButton("Withdrawal Requests")],
