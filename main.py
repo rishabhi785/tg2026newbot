@@ -414,13 +414,13 @@ async def get_user_keyboard_async(user_id: int):
     b_red = await get_setting("btn_redeem", "1")
 
     buttons = []
-    if b_bal == "1": buttons.append(KeyboardButton("Balance", style="success"))
-    if b_ref == "1": buttons.append(KeyboardButton("Refer & Earn", style="primary"))
-    if b_bon == "1": buttons.append(KeyboardButton("Bonus", style="success"))
-    if b_wit == "1": buttons.append(KeyboardButton("Withdraw", style="danger"))
-    if b_upi == "1": buttons.append(KeyboardButton("Link UPI", style="primary"))
-    if b_wal == "1": buttons.append(KeyboardButton("Link Wallet", style="primary"))
-    if b_red == "1": buttons.append(KeyboardButton("Redeem Code", style="success"))
+    if b_bal == "1": buttons.append(KeyboardButton("🎁 Balance", style="success"))
+    if b_ref == "1": buttons.append(KeyboardButton("🎀 Refer & Earn", style="primary"))
+    if b_bon == "1": buttons.append(KeyboardButton("🎉 Bonus", style="success"))
+    if b_wit == "1": buttons.append(KeyboardButton("🚀 Withdraw", style="danger"))
+    if b_upi == "1": buttons.append(KeyboardButton("💸 Link UPI", style="primary"))
+    if b_wal == "1": buttons.append(KeyboardButton("😍 Link Wallet", style="primary"))
+    if b_red == "1": buttons.append(KeyboardButton("🤑 Redeem Code", style="success"))
 
     rows = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
 
@@ -755,21 +755,22 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 return
 
-    if text == "Balance":
+    # UPDATED: Button texts must exactly match the new emojis from get_user_keyboard_async
+    if text == "🎁 Balance":
         await handle_balance(update, user_id)
-    elif text == "Refer & Earn":
+    elif text == "🎀 Refer & Earn":
         await handle_refer_earn(update, user_id, context)
-    elif text == "Bonus":
+    elif text == "🎉 Bonus":
         await handle_bonus(update, user_id)
-    elif text == "Withdraw":
+    elif text == "🚀 Withdraw":
         await handle_withdraw(update, user_id, context)
-    elif text == "Link UPI":
+    elif text == "💸 Link UPI":
         context.user_data['waiting_for'] = 'upi'
         await update.message.reply_text(
             "🟢 *LINK UPI ID* — Send your UPI ID _(eg. name@upi)_",
             parse_mode="Markdown"
         )
-    elif text == "Link Wallet":
+    elif text == "😍 Link Wallet":
         ultra_on = await get_setting("ultra_pay_enabled", "0")
         vsv_on = await get_setting("vsv_withdrawal_enabled", "1")
         
@@ -788,7 +789,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await update.message.reply_text("❌ All wallet links are currently disabled by admin.")
             
-    elif text == "Redeem Code":
+    elif text == "🤑 Redeem Code":
         await handle_redeem_code_menu(update, user_id, context)
     else:
         waiting = context.user_data.get('waiting_for')
@@ -1611,7 +1612,7 @@ async def handle_balance(update, user_id):
     refs = int(row[1]) if row and row[1] is not None else 0
     await update.message.reply_text(
         f"💸 Balance: ₹{balance:.2f}\n\n"
-        f"🎉 Use \'Withdraw\' Button to Withdraw The Balance!",
+        f"🎉 Use \'🚀 Withdraw\' Button to Withdraw The Balance!",
         parse_mode="Markdown"
     )
 
@@ -2353,7 +2354,6 @@ async def verify_device(payload: VerifyRequest, request: Request):
             logger.error(f"Referrer notify error: {e}")
 
     first_name = user_data.get("first_name", "User")
-    # Yahan bhi HTML use hoga ab
     safe_first_name = html.escape(str(first_name))
     
     try:
