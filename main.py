@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import hmac
+import html
 import json
 import logging
 import os
@@ -413,14 +414,13 @@ async def get_user_keyboard_async(user_id: int):
     b_red = await get_setting("btn_redeem", "1")
 
     buttons = []
-    # YAHAN STYLE ADD KIYA GAYA HAI TEST KARNE KE LIYE 👇
     if b_bal == "1": buttons.append(KeyboardButton("Balance", style="success"))
     if b_ref == "1": buttons.append(KeyboardButton("Refer & Earn", style="primary"))
     if b_bon == "1": buttons.append(KeyboardButton("Bonus", style="success"))
     if b_wit == "1": buttons.append(KeyboardButton("Withdraw", style="danger"))
-    if b_upi == "1": buttons.append(KeyboardButton("Link UPI"))
-    if b_wal == "1": buttons.append(KeyboardButton("Link Wallet"))
-    if b_red == "1": buttons.append(KeyboardButton("Redeem Code"))
+    if b_upi == "1": buttons.append(KeyboardButton("Link UPI", style="primary"))
+    if b_wal == "1": buttons.append(KeyboardButton("Link Wallet", style="primary"))
+    if b_red == "1": buttons.append(KeyboardButton("Redeem Code", style="success"))
 
     rows = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
 
@@ -428,6 +428,8 @@ async def get_user_keyboard_async(user_id: int):
         rows.append([KeyboardButton("Admin Panel")])
         
     return ReplyKeyboardMarkup(rows, resize_keyboard=True, one_time_keyboard=False)
+
+
 def get_admin_keyboard():
     rows = [
         [KeyboardButton("Total Users"), KeyboardButton("Withdrawal Requests")],
@@ -452,11 +454,12 @@ def get_admin_keyboard():
 
 
 async def send_main_menu(update: Update, name: str, user_id: int):
-    safe_name = str(name).replace("_", "\\_").replace("*", "\\*").replace("[", "\\[").replace("`", "\\`")
+    # HTML escape ki wajah se special characters (jese '_' ya '*') parse errors nahi denge
+    safe_name = html.escape(str(name))
     await update.message.reply_text(
-        f"😍 Welcome, *{safe_name}*!\n\n💸 Earn Money • Refer Friends • Withdraw Instantly\n\n👇 Use button below to get started",
+        f"😍 Welcome, <b>{safe_name}</b>!\n\n💸 Earn Money • Refer Friends • Withdraw Instantly\n\n👇 Use button below to get started",
         reply_markup=await get_user_keyboard_async(user_id),
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
 
 # --- Naya Function: Jo verification OFF hone par bhi referrer ko reward dega ---
@@ -640,11 +643,11 @@ async def check_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
             await query.message.delete()
         except:
             pass
-        safe_name = str(user.first_name).replace("_", "\\_").replace("*", "\\*").replace("[", "\\[").replace("`", "\\`")
+        safe_name = html.escape(str(user.first_name))
         await query.message.reply_text(
-            f"😍 Welcome, *{safe_name}*!\n\n💸 Earn Money • Refer Friends • Withdraw Instantly\n\n👇 Use button below to get started",
+            f"😍 Welcome, <b>{safe_name}</b>!\n\n💸 Earn Money • Refer Friends • Withdraw Instantly\n\n👇 Use button below to get started",
             reply_markup=await get_user_keyboard_async(user.id),
-            parse_mode="Markdown"
+            parse_mode="HTML"
         )
     else:
         keyboard = [[InlineKeyboardButton("🟢 Verify Yourself", web_app=WebAppInfo(url=WEBAPP_URL), style="success")]]
@@ -2350,7 +2353,8 @@ async def verify_device(payload: VerifyRequest, request: Request):
             logger.error(f"Referrer notify error: {e}")
 
     first_name = user_data.get("first_name", "User")
-    safe_first_name = str(first_name).replace("_", "\\_").replace("*", "\\*").replace("[", "\\[").replace("`", "\\`")
+    # Yahan bhi HTML use hoga ab
+    safe_first_name = html.escape(str(first_name))
     
     try:
         keyboard = await get_user_keyboard_async(user_id)
@@ -2361,8 +2365,8 @@ async def verify_device(payload: VerifyRequest, request: Request):
         )
         await bot_app_global.bot.send_message(
             chat_id=user_id,
-            text=f"😍 Welcome, *{safe_first_name}*!\n\n💸 Earn Money • Refer Friends • Withdraw Instantly\n\n👇 Use button below to get started",
-            parse_mode="Markdown",
+            text=f"😍 Welcome, <b>{safe_first_name}</b>!\n\n💸 Earn Money • Refer Friends • Withdraw Instantly\n\n👇 Use button below to get started",
+            parse_mode="HTML",
             reply_markup=keyboard
         )
     except Exception as e:
