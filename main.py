@@ -453,7 +453,6 @@ def get_admin_keyboard():
 
 
 async def send_main_menu(update: Update, name: str, user_id: int):
-    # FIX: Markdown Name Error Protection
     safe_name = str(name).replace("_", "\\_").replace("*", "\\*").replace("[", "\\[").replace("`", "\\`")
     await update.message.reply_text(
         f"😍 Welcome, *{safe_name}*!\n\n💸 Earn Money • Refer Friends • Withdraw Instantly\n\n👇 Use button below to get started",
@@ -461,6 +460,45 @@ async def send_main_menu(update: Update, name: str, user_id: int):
         parse_mode="Markdown"
     )
 
+# --- Naya Function: Jo verification OFF hone par bhi referrer ko reward dega ---
+async def process_referral_and_verify(user_id: int, bot):
+    async with turso_connect() as db:
+        await db.execute("UPDATE users SET is_verified=1 WHERE user_id=?", (user_id,))
+        await db.commit()
+        
+    async with turso_connect() as db2:
+        referrer_row = await (await db2.execute(
+            "SELECT value FROM bot_settings WHERE key=?",
+            (f"pending_referrer_{user_id}",)
+        )).fetchone()
+
+    if referrer_row:
+        referrer_id_val = int(referrer_row[0])
+        refer_reward = float(await get_setting("refer_reward", "5"))
+        async with turso_connect() as db3:
+            await db3.execute(
+                "INSERT OR IGNORE INTO user_balance (user_id, balance) VALUES (?, 0.0)",
+                (referrer_id_val,)
+            )
+            await db3.execute(
+                "UPDATE user_balance SET balance = balance + ?, referral_count = referral_count + 1 WHERE user_id=?",
+                (refer_reward, referrer_id_val)
+            )
+            await db3.execute("DELETE FROM bot_settings WHERE key=?", (f"pending_referrer_{user_id}",))
+            await db3.commit()
+
+        try:
+            reward_str = f"{refer_reward:.2f}".replace(".", "\\.")
+            await bot.send_message(
+                chat_id=referrer_id_val,
+                text=(
+                    f"🎉 [User {user_id}](tg://user?id={user_id}) got invited by your URL\n"
+                    f"🎁 Rs\\.{reward_str} added to your balance"
+                ),
+                parse_mode="MarkdownV2"
+            )
+        except Exception as e:
+            logger.error(f"Referrer notify error: {e}")
 
 # ===================== COMMAND HANDLERS =====================
 
@@ -513,10 +551,13 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await send_join_message(update, user.id)
         return
 
-    # FIX: Check Admin Verification Setting
     verify_on = await get_setting("verification_enabled", "1")
 
     if is_verified == 1 or verify_on == "0":
+        # Naya Logic: Agar verify off hai, toh bypass refer claim karo
+        if is_verified == 0 and verify_on == "0":
+            await process_referral_and_verify(user.id, context.bot)
+            
         await send_main_menu(update, user.first_name, user.id)
     else:
         keyboard = [[InlineKeyboardButton("🟢 Verify Yourself", web_app=WebAppInfo(url=WEBAPP_URL))]]
@@ -585,18 +626,23 @@ async def check_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         row = await (await db.execute("SELECT is_verified FROM users WHERE user_id = ?", (user.id,))).fetchone()
         is_verified = int(row[0]) if row and row[0] is not None else 0
 
+    verify_on = await get_setting("verification_enabled", "1")
+
     for old_msg_id in context.user_data.pop("not_joined_msg_ids", []):
         try:
             await context.bot.delete_message(chat_id=user.id, message_id=old_msg_id)
         except:
             pass
 
-    if is_verified == 1:
+    if is_verified == 1 or verify_on == "0":
+        # Naya Logic: Claim button dabane ke baad bypass verify aur referral reward
+        if is_verified == 0 and verify_on == "0":
+            await process_referral_and_verify(user.id, context.bot)
+            
         try:
             await query.message.delete()
         except:
             pass
-        # FIX: Markdown Name Error Protection
         safe_name = str(user.first_name).replace("_", "\\_").replace("*", "\\*").replace("[", "\\[").replace("`", "\\`")
         await query.message.reply_text(
             f"😍 Welcome, *{safe_name}*!\n\n💸 Earn Money • Refer Friends • Withdraw Instantly\n\n👇 Use button below to get started",
@@ -2308,7 +2354,6 @@ async def verify_device(payload: VerifyRequest, request: Request):
             logger.error(f"Referrer notify error: {e}")
 
     first_name = user_data.get("first_name", "User")
-    # FIX: Markdown error fix
     safe_first_name = str(first_name).replace("_", "\\_").replace("*", "\\*").replace("[", "\\[").replace("`", "\\`")
     
     try:
