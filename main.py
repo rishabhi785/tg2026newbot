@@ -382,7 +382,7 @@ async def send_join_message(update, user_id: int, bot=None):
     row = []
     for ch in channels:
         name = ch[3] or ch[1]
-        row.append(InlineKeyboardButton(f"{name}", url=ch[2]))
+        row.append(InlineKeyboardButton(f"{name}", url=ch[2], style="primary"))
         if len(row) == 2:
             keyboard.append(row)
             row = []
@@ -554,13 +554,12 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     verify_on = await get_setting("verification_enabled", "1")
 
     if is_verified == 1 or verify_on == "0":
-        # Naya Logic: Agar verify off hai, toh bypass refer claim karo
         if is_verified == 0 and verify_on == "0":
             await process_referral_and_verify(user.id, context.bot)
             
         await send_main_menu(update, user.first_name, user.id)
     else:
-        keyboard = [[InlineKeyboardButton("🟢 Verify Yourself", web_app=WebAppInfo(url=WEBAPP_URL))]]
+        keyboard = [[InlineKeyboardButton("🟢 Verify Yourself", web_app=WebAppInfo(url=WEBAPP_URL), style="success")]]
         await update.message.reply_text(
             "🔐 *Verify Yourself To Start Bot*",
             reply_markup=InlineKeyboardMarkup(keyboard),
@@ -635,7 +634,6 @@ async def check_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
             pass
 
     if is_verified == 1 or verify_on == "0":
-        # Naya Logic: Claim button dabane ke baad bypass verify aur referral reward
         if is_verified == 0 and verify_on == "0":
             await process_referral_and_verify(user.id, context.bot)
             
@@ -650,7 +648,7 @@ async def check_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
             parse_mode="Markdown"
         )
     else:
-        keyboard = [[InlineKeyboardButton("🟢 Verify Yourself", web_app=WebAppInfo(url=WEBAPP_URL))]]
+        keyboard = [[InlineKeyboardButton("🟢 Verify Yourself", web_app=WebAppInfo(url=WEBAPP_URL), style="success")]]
         await query.edit_message_text(
             "🔐 *Verify Yourself To Start Bot*",
             reply_markup=InlineKeyboardMarkup(keyboard),
@@ -747,7 +745,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 is_verified = int(row[0]) if row and row[0] is not None else 0
 
             if is_verified != 1:
-                keyboard = [[InlineKeyboardButton("🟢 Verify Yourself", web_app=WebAppInfo(url=WEBAPP_URL))]]
+                keyboard = [[InlineKeyboardButton("🟢 Verify Yourself", web_app=WebAppInfo(url=WEBAPP_URL), style="success")]]
                 await update.message.reply_text(
                     "🔐 *Verify Yourself To Start Bot*",
                     reply_markup=InlineKeyboardMarkup(keyboard),
@@ -770,14 +768,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown"
         )
     elif text == "Link Wallet":
-        # Dynamic response based on enabled gateways
         ultra_on = await get_setting("ultra_pay_enabled", "0")
         vsv_on = await get_setting("vsv_withdrawal_enabled", "1")
         
         if ultra_on == "1" and vsv_on == "1":
             keyboard = [
-                [InlineKeyboardButton("🔗 Link Ultra Pay", callback_data="link_ultra")],
-                [InlineKeyboardButton("🔗 Link VSV Wallet", callback_data="link_vsv")]
+                [InlineKeyboardButton("🔗 Link Ultra Pay", callback_data="link_ultra", style="primary")],
+                [InlineKeyboardButton("🔗 Link VSV Wallet", callback_data="link_vsv", style="primary")]
             ]
             await update.message.reply_text("✨ Select the wallet you want to link:", reply_markup=InlineKeyboardMarkup(keyboard))
         elif ultra_on == "1":
@@ -1631,8 +1628,8 @@ async def handle_refer_earn(update, user_id, context):
 
     keyboard = [
         [
-            InlineKeyboardButton("🎀 MY INVITES", callback_data=f"refer_invites_{user_id}"),
-            InlineKeyboardButton("🏆 LEADERBOARD", callback_data="refer_leaderboard"),
+            InlineKeyboardButton("🎀 MY INVITES", callback_data=f"refer_invites_{user_id}", style="primary"),
+            InlineKeyboardButton("🏆 LEADERBOARD", callback_data="refer_leaderboard", style="primary"),
         ],
     ]
 
@@ -1648,8 +1645,8 @@ async def handle_refer_earn(update, user_id, context):
 
 async def handle_bonus(update, user_id):
     keyboard = [
-        [InlineKeyboardButton("DAILY BONUS", callback_data=f"bonus_daily_{user_id}")],
-        [InlineKeyboardButton("GIFT CODE", callback_data=f"bonus_gift_{user_id}")],
+        [InlineKeyboardButton("DAILY BONUS", callback_data=f"bonus_daily_{user_id}", style="success")],
+        [InlineKeyboardButton("GIFT CODE", callback_data=f"bonus_gift_{user_id}", style="primary")],
     ]
     await update.message.reply_text(
         "✨ *CHOOSE ONE:*",
@@ -1701,11 +1698,11 @@ async def handle_withdraw(update, user_id, context):
 
     keyboard = []
     if ultra_wallet and ultra_enabled == "1":
-        keyboard.append([InlineKeyboardButton("✅ ULTRA PAY CLICK", callback_data=f"wd_ultra_{user_id}")])
+        keyboard.append([InlineKeyboardButton("✅ ULTRA PAY CLICK", callback_data=f"wd_ultra_{user_id}", style="success")])
     if vsv_wallet and vsv_enabled == "1":
-        keyboard.append([InlineKeyboardButton("✅ VSV CLICK", callback_data=f"wd_vsv_{user_id}")])
+        keyboard.append([InlineKeyboardButton("✅ VSV CLICK", callback_data=f"wd_vsv_{user_id}", style="success")])
     if upi_id and upi_enabled == "1":
-        keyboard.append([InlineKeyboardButton("✅ UPI CLICK", callback_data=f"wd_upi_{user_id}")])
+        keyboard.append([InlineKeyboardButton("✅ UPI CLICK", callback_data=f"wd_upi_{user_id}", style="success")])
 
     if not keyboard:
         await update.message.reply_text(
@@ -1909,8 +1906,8 @@ async def handle_leaderboard(update):
 
 async def handle_redeem_code_menu(update, user_id, context):
     keyboard = [
-        [InlineKeyboardButton("🛒 Buy Redeem Code", callback_data="redeem_buy")],
-        [InlineKeyboardButton("🎁 Use Gift Code", callback_data="redeem_use")],
+        [InlineKeyboardButton("🛒 Buy Redeem Code", callback_data="redeem_buy", style="primary")],
+        [InlineKeyboardButton("🎁 Use Gift Code", callback_data="redeem_use", style="success")],
     ]
     await update.message.reply_text(
         "*REDEEM CODE*\n\n"
