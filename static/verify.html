@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -219,7 +218,7 @@
     transition: width 0.3s ease;
   }
 
-  /* Continue Button */
+  /* Buttons */
   .btn-continue {
     width: 100%;
     padding: 17px;
@@ -237,7 +236,25 @@
   }
   .btn-continue:active { opacity: 0.85; transform: scale(0.98); }
 
-  /* Blocked message */
+  /* Failed Close Button */
+  .btn-failed-close {
+    width: 100%;
+    padding: 17px;
+    border-radius: 14px;
+    background: linear-gradient(135deg, #ff5252, #d32f2f);
+    border: none;
+    color: #ffffff;
+    font-size: 15px;
+    font-weight: 800;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    cursor: pointer;
+    margin-top: 15px;
+    transition: opacity 0.2s, transform 0.1s;
+  }
+  .btn-failed-close:active { opacity: 0.85; transform: scale(0.98); }
+
+  /* Blocked info wrap */
   .blocked-info {
     background: rgba(255,82,82,0.08);
     border: 1px solid rgba(255,82,82,0.2);
@@ -266,7 +283,6 @@
 </head>
 <body>
 
-<!-- Header -->
 <div class="header">
   <div class="avatar" id="avatarEl">?</div>
   <div class="user-info">
@@ -276,16 +292,13 @@
   <div class="status-badge status-scanning" id="statusBadge">● SCANNING</div>
 </div>
 
-<!-- Main Card -->
 <div class="content">
   <div class="card">
 
-    <!-- Icon -->
     <div class="icon-wrap scanning" id="iconWrap">
       <div class="ring ring-1"></div>
       <div class="ring ring-2"></div>
       <div class="icon-inner" id="iconInner">
-        <!-- Fingerprint SVG -->
         <svg id="iconSvg" viewBox="0 0 38 38" fill="none" xmlns="http://www.w3.org/2000/svg">
           <g stroke="#4a9eff" stroke-width="1.8" stroke-linecap="round">
             <path d="M14.5 10.5C14.5 10.5 19 8 23.5 10.5C28 13 28 19 28 19" opacity="0.5"/>
@@ -301,11 +314,9 @@
       </div>
     </div>
 
-    <!-- Text -->
     <div class="title" id="titleEl">Verifying Device</div>
     <div class="subtitle" id="subtitleEl">Establishing secure handshake...</div>
 
-    <!-- Progress (shown during scan) -->
     <div class="progress-wrap" id="progressWrap">
       <div class="progress-labels">
         <div class="scanning-text" id="scanLabel">ANALYSIS IN PROGRESS</div>
@@ -316,21 +327,23 @@
       </div>
     </div>
 
-    <!-- Continue Button (hidden until verified) -->
-    <button class="btn-continue" id="continueBtn" style="display:none" onclick="continueToBot()">
+    <button class="btn-continue" id="continueBtn" style="display:none" onclick="closeWebApp()">
       CONTINUE TO BOT
     </button>
 
-    <!-- Blocked Info (hidden until blocked) -->
-    <div class="blocked-info" id="blockedInfo" style="display:none">
-      This device is already registered with another Telegram account. Each device can only be linked to one account.
+    <div id="failedWrapper" style="display:none; width: 100%;">
+      <div class="blocked-info" id="blockedInfo">
+        This device is already registered with another Telegram account. Each device can only be linked to one account.
+      </div>
+      <button class="btn-failed-close" id="failedCloseBtn" onclick="closeWebApp()">
+        Continue to Bot 🚀
+      </button>
     </div>
 
   </div>
 </div>
 
 <script>
-  // Init Telegram WebApp
   const tg = window.Telegram?.WebApp;
   if (tg) {
     tg.ready();
@@ -339,7 +352,6 @@
     tg.setBackgroundColor('#0a0e1a');
   }
 
-  // Show user info
   const user = tg?.initDataUnsafe?.user || {};
   const name = user.first_name || 'User';
   const userId = user.id || '—';
@@ -347,12 +359,10 @@
   document.getElementById('idEl').textContent = 'ID: ' + userId;
   document.getElementById('avatarEl').textContent = name.charAt(0).toUpperCase();
 
-  // Persistent device ID using localStorage
   function getPersistentDeviceId() {
     try {
       let pid = localStorage.getItem('_tg_dev_pid');
       if (!pid) {
-        // Generate once and store permanently
         const arr = new Uint8Array(16);
         crypto.getRandomValues(arr);
         pid = Array.from(arr).map(b => b.toString(16).padStart(2,'0')).join('');
@@ -364,13 +374,9 @@
     }
   }
 
-  // Device fingerprinting
   async function getDeviceFingerprint() {
     const signals = [];
-
-    // Persistent ID - same device pe hamesha same rahega
     signals.push(getPersistentDeviceId());
-
     signals.push(navigator.userAgent || '');
     signals.push(navigator.language || '');
     signals.push(navigator.platform || '');
@@ -381,7 +387,6 @@
     signals.push(String(navigator.maxTouchPoints || 0));
     signals.push(Intl.DateTimeFormat().resolvedOptions().timeZone || '');
 
-    // Canvas fingerprint
     try {
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
@@ -397,11 +402,8 @@
       ctx.font = '14px Georgia';
       ctx.fillText('DeviceCheck!', 4, 17);
       signals.push(canvas.toDataURL());
-    } catch (_) {
-      signals.push('canvas-blocked');
-    }
+    } catch (_) { signals.push('canvas-blocked'); }
 
-    // WebGL renderer
     try {
       const gl = document.createElement('canvas').getContext('webgl');
       if (gl) {
@@ -411,11 +413,8 @@
           signals.push(gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL));
         }
       }
-    } catch (_) {
-      signals.push('webgl-blocked');
-    }
+    } catch (_) { signals.push('webgl-blocked'); }
 
-    // Audio context fingerprint
     try {
       const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       const oscillator = audioCtx.createOscillator();
@@ -433,11 +432,8 @@
       oscillator.stop();
       audioCtx.close();
       signals.push(String(buf[0]));
-    } catch (_) {
-      signals.push('audio-blocked');
-    }
+    } catch (_) { signals.push('audio-blocked'); }
 
-    // Installed fonts probe
     const testFonts = ['Arial', 'Helvetica', 'Times New Roman', 'Courier New', 'Georgia'];
     const fontCanvas = document.createElement('canvas');
     const fctx = fontCanvas.getContext('2d');
@@ -449,7 +445,6 @@
     }).join(',');
     signals.push(fontStr);
 
-    // Hash all signals using SubtleCrypto
     const raw = signals.join('|!|');
     try {
       const encoded = new TextEncoder().encode(raw);
@@ -457,7 +452,6 @@
       const hashArr = Array.from(new Uint8Array(hashBuf));
       return hashArr.map(b => b.toString(16).padStart(2, '0')).join('');
     } catch (_) {
-      // Fallback simple hash
       let h = 0;
       for (let i = 0; i < raw.length; i++) {
         h = (Math.imul(31, h) + raw.charCodeAt(i)) | 0;
@@ -466,7 +460,6 @@
     }
   }
 
-  // Animate progress bar
   function animateProgress(target, duration, onDone) {
     const fill = document.getElementById('progressFill');
     const pct = document.getElementById('pctEl');
@@ -500,7 +493,6 @@
     requestAnimationFrame(step);
   }
 
-  // Show verified state
   function showVerified() {
     document.getElementById('iconWrap').className = 'icon-wrap success';
     document.getElementById('iconInner').className = 'icon-inner green';
@@ -517,7 +509,6 @@
     document.getElementById('statusBadge').textContent = '● ACTIVE';
   }
 
-  // Show blocked state
   function showBlocked() {
     document.getElementById('iconWrap').className = 'icon-wrap';
     document.getElementById('iconInner').className = 'icon-inner red';
@@ -530,44 +521,27 @@
     document.getElementById('titleEl').textContent = 'Verification Failed';
     document.getElementById('subtitleEl').textContent = 'Device already linked to another account.';
     document.getElementById('progressWrap').style.display = 'none';
-    document.getElementById('blockedInfo').style.display = 'block';
+    document.getElementById('failedWrapper').style.display = 'block'; // Pura container return button ke sath active hoga
     document.getElementById('statusBadge').className = 'status-badge status-blocked';
     document.getElementById('statusBadge').textContent = '● BLOCKED';
   }
 
-  // ✅ UPDATED: Continue button - Option 2
-  // Pehle bot pe switchInlineQuery bhejta hai, phir WebApp band karta hai
-  function continueToBot() {
+  // Pure WebApp Close handle trigger (Don't touch)
+  function closeWebApp() {
     if (tg) {
-      try {
-        // Bot ko verified status bhejo inline query ke through
-        tg.switchInlineQuery('verified', ['bots']);
-      } catch (e) {
-        // Agar switchInlineQuery kaam na kare toh seedha close karo
-        console.log('switchInlineQuery failed, closing directly:', e);
-      }
-      // WebApp band karo - user bot chat pe wapas aayega
-      setTimeout(() => {
-        tg.close();
-      }, 300);
+      tg.close();
     } else {
-      // Browser mein test ke liye
-      alert('Bot verified! (Telegram context nahi mila)');
+      alert('Bot UI redirected! (Telegram context missing)');
     }
   }
 
-  // Main verification flow
   async function startVerification() {
     const initData = tg?.initData || '';
 
-    // Animate to 40%
     animateProgress(40, 1200, async () => {
-      // Collect fingerprint
       const deviceId = await getDeviceFingerprint();
 
-      // Animate to 80%
       animateProgress(80, 800, async () => {
-        // Call backend
         try {
           const persistentId = getPersistentDeviceId();
           const response = await fetch('/bot/api/verify-device', {
@@ -578,13 +552,10 @@
 
           const data = await response.json();
 
-          // Animate to 100% then show result
           animateProgress(100, 500, () => {
             setTimeout(() => {
               if (data.status === 'verified') {
                 showVerified();
-              } else if (data.status === 'blocked') {
-                showBlocked();
               } else {
                 showBlocked();
               }
@@ -592,7 +563,6 @@
           });
 
         } catch (err) {
-          // Network error
           animateProgress(100, 400, () => {
             setTimeout(() => showBlocked(), 300);
           });
@@ -601,10 +571,9 @@
     });
   }
 
-  // Start on load
   window.addEventListener('DOMContentLoaded', () => {
     setTimeout(startVerification, 400);
   });
 </script>
 </body>
-  </html>
+</html>
