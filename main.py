@@ -282,9 +282,9 @@ async def init_db():
             ("btn_bonus", "1"),
             ("btn_withdraw", "1"),
             ("btn_link_upi", "1"),
-            ("btn_link_wallet", "1"), # generic wallet button
+            ("btn_link_wallet", "1"), 
             ("btn_redeem", "1"),
-            ("ultra_pay_enabled", "0"), # Ultra Pay defaults
+            ("ultra_pay_enabled", "0"), 
             ("ultrapay_token", ""),
             ("ultrapay_key", ""),
         ]
@@ -667,26 +667,24 @@ async def web_app_data_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     context.user_data.clear()
     try:
         payload = json.loads(data)
-        if payload.get("status") == "verified":
+        status = payload.get("status", "")
+        
+        if status == "verified":
             await update.message.reply_text(
                 f"✅ *VERIFIED SUCCESSFULLY!*",
                 parse_mode="Markdown",
                 reply_markup=await get_user_keyboard_async(user.id)
             )
             await send_main_menu(update, user.first_name, user.id)
-        elif payload.get("status") == "blocked":
-            # Bot will now allow duplicate users to proceed but notify them it failed
+        else:
+            # FIX: Agar verified ke alawa kuch bhi aata hai (blocked, failed, error), 
+            # to usko Duplicate/Allowed case maan ke Reply Keyboard send karenge.
             await update.message.reply_text(
                 "❌ *VERIFICATION FAILED*\n\nThis device is already linked to another account.\n\n✅ _However, you can still use the bot's normal features!_",
                 parse_mode="Markdown",
                 reply_markup=await get_user_keyboard_async(user.id)
             )
             await send_main_menu(update, user.first_name, user.id)
-        else:
-            await update.message.reply_text(
-                "❌ Verification failed. Please try /start again.",
-                parse_mode="Markdown"
-            )
     except Exception as e:
         logger.error(f"web_app_data error: {e}")
         await update.message.reply_text("⚠️ Something went wrong. Try /start again.")
