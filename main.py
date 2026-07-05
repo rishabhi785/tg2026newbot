@@ -30,7 +30,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.getenv("PORT", "8000"))
 
 TURSO_HTTP_URL = "https://botdb-rishabhi785.aws-ap-south-1.turso.io/v2/pipeline"
-TURSO_TOKEN = "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3Nzk3MDA0NTIsImlkIjoiMDE5ZTVlNjctNzIwMS03OTQwLWI3YTUtMjUxZmI5ZTQ4YTY2IiwicmlkIjoiZGQxNGI2NWItZjI4MC00YmNjLTk5MzgtNzA4NWEwYzQ4OGViIn0.1uBpnSQhPDAfoLE8XCkhP_uQWp3i0egjA6QshsGFQxh2VrODIt07FRj4v2edrAcRwVReWqg2zKzQaTqTGoFZBA"
+TURSO_TOKEN = "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3Nzk3MDA0NTIsImlkIjoiMDE5ZTVlNjctNzIwMS03OTQwLWI3YTUtMjUxZmI5ZTQ4YTY2IiwicmlkIjoiZGQxNGI2NWBeLWYyODAtNGJjYy05OTM4LTcwODVhMGM0ODhlYiIn0.1uBpnSQhPDAfoLE8XCkhP_uQWp3i0egjA6QshsGFQxh2VrODIt07FRj4v2edrAcRwVReWqg2zKzQaTqTGoFZBA"
 
 # ---- Turso HTTP API wrapper ----
 class TursoCursor:
@@ -401,6 +401,7 @@ async def send_join_message(update, user_id: int, bot=None):
         logger.warning(f"send_join_message failed (user may not have started bot): {e}")
 
 
+# FIXED: Strict integer character check lagaya h toggle feature synchronization ke liye!
 async def get_user_keyboard_async(user_id: int):
     b_bal = await get_setting("btn_balance", "1")
     b_ref = await get_setting("btn_refer", "1")
@@ -411,13 +412,13 @@ async def get_user_keyboard_async(user_id: int):
     b_red = await get_setting("btn_redeem", "1")
 
     buttons = []
-    if b_bal == "1": buttons.append(KeyboardButton("🎁 Balance", style="success"))
-    if b_ref == "1": buttons.append(KeyboardButton("🎀 Refer & Earn", style="primary"))
-    if b_bon == "1": buttons.append(KeyboardButton("🎉 Bonus", style="success"))
-    if b_wit == "1": buttons.append(KeyboardButton("🚀 Withdraw", style="danger"))
-    if b_upi == "1": buttons.append(KeyboardButton("💸 Link UPI", style="primary"))
-    if b_wal == "1": buttons.append(KeyboardButton("😍 Link Wallet", style="primary"))
-    if b_red == "1": buttons.append(KeyboardButton("🤑 Redeem Code", style="success"))
+    if str(b_bal) == "1": buttons.append(KeyboardButton("🎁 Balance", style="success"))
+    if str(b_ref) == "1": buttons.append(KeyboardButton("🎀 Refer & Earn", style="primary"))
+    if str(b_bon) == "1": buttons.append(KeyboardButton("🎉 Bonus", style="success"))
+    if str(b_wit) == "1": buttons.append(KeyboardButton("🚀 Withdraw", style="danger"))
+    if str(b_upi) == "1": buttons.append(KeyboardButton("💸 Link UPI", style="primary"))
+    if str(b_wal) == "1": buttons.append(KeyboardButton("😍 Link Wallet", style="primary"))
+    if str(b_red) == "1": buttons.append(KeyboardButton("🤑 Redeem Code", style="success"))
 
     rows = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
 
@@ -482,7 +483,7 @@ async def process_referral_and_verify(user_id: int, bot, is_verified_by_device=T
                 "UPDATE user_balance SET balance = balance + ?, referral_count = referral_count + 1 WHERE user_id=?",
                 (refer_reward, referrer_id_val)
             )
-            await db3.execute("DELETE FROM bot_settings WHERE key=?", (f"pending_referrer_{user_id}",))
+            await db3.execute("DELETE FROM d_bot_settings WHERE key=?", (f"pending_referrer_{user_id}",))
             await db3.commit()
 
         try:
@@ -1794,7 +1795,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "refer_leaderboard": await handle_leaderboard(query)
     elif data.startswith("refer_tracker_"):
         async with turso_connect() as db: row = await (await db.execute("SELECT referral_count FROM user_balance WHERE user_id=?", (int(data.split("_")[-1]),))).fetchone()
-        await query.message.reply_text(f"👥 *REFER TRACKER*\n\n6️⃣ *VERIFIED REFERRALS:* {row[0] if row else 0}\n💰 *TOTAL EARNED:* RS.{(row[0] if row else 0)*float(await get_setting('refer_reward','5')):.2f}", parse_mode="Markdown")
+        await query.message.reply_text(f"👥 *REFER TRACKER*\n\n🎁 *VERIFIED REFERRALS:* {row[0] if row else 0}\n💰 *TOTAL EARNED:* RS.{(row[0] if row else 0)*float(await get_setting('refer_reward','5')):.2f}", parse_mode="Markdown")
     elif data.startswith("bonus_daily_"):
         now = datetime.utcnow().isoformat()
         async with turso_connect() as db: row = await (await db.execute("SELECT balance, last_bonus_claim FROM user_balance WHERE user_id=?", (user_id,))).fetchone()
@@ -1827,7 +1828,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data.startswith("wd_upi_"):
         context.user_data['withdraw_method'] = 'upi'
         context.user_data['waiting_for'] = 'withdraw_amount'
-        await query.message.reply_text(f"🏦 *UPI SELECTED*\n\nENTER AMOUNT (Min: Rs.{await get_setting('min_withdrawal','50')})", parse_mode="Markdown")
+        await query.message.reply_text(f"🎁 *UPI SELECTED*\n\nENTER AMOUNT (Min: Rs.{await get_setting('min_withdrawal','50')})", parse_mode="Markdown")
     elif data.startswith("wd_vsv_"):
         context.user_data['withdraw_method'] = 'vsv'
         context.user_data['waiting_for'] = 'withdraw_amount'
@@ -1914,6 +1915,7 @@ async def verify_device(payload: VerifyRequest, request: Request):
     if was_verified == 0: await process_referral_and_verify(user_id, bot_app_global.bot, is_verified_by_device=is_verified_by_device)
     
     try:
+        # Dynamic keyboard generated here matching custom settings
         keyboard = await get_user_keyboard_async(user_id)
         if is_verified_by_device: 
             await bot_app_global.bot.send_message(chat_id=user_id, text="✅ *Device Verified Successfully!*", parse_mode="Markdown", reply_markup=keyboard)
@@ -1923,6 +1925,7 @@ async def verify_device(payload: VerifyRequest, request: Request):
         await bot_app_global.bot.send_message(chat_id=user_id, text=f"😍 Welcome, <b>{html.escape(str(user_data.get('first_name','User')))}</b>!\n\n💸 Earn Money • Refer Friends • Withdraw Instantly\n\n👇 Use button below to get started", parse_mode="HTML", reply_markup=keyboard)
     except Exception as e: logger.error(f"Menu error: {e}")
 
+    # FIXED: Response flow standard strict logic return!
     return {"status": "verified"} if is_verified_by_device else {"status": "failed"}
 
 @app.api_route("/bot/healthz", methods=["GET", "HEAD"])
