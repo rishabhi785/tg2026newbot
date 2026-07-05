@@ -1645,7 +1645,7 @@ async def handle_withdraw_amount(update, user_id, context, text):
             admin_msg = f"💸 NEW UPI WITHDRAWAL REQUEST!\n\nUser ID:\n`{user_id}`\n\nAmount:\n`Rs.{amount:.2f}`\n\nUPI ID:\n`{upi_id}`"
             await update.get_bot().send_message(chat_id=ADMIN_ID, text=admin_msg, parse_mode="Markdown")
         except: pass
-        await update.message.reply_text(f"✅ *UPI WITHDRAWAL REQUEST SUBMITTED!*\n\n💰 Amount: Rs.{amount:.2f}\nSUP UPI: {upi_id}\n\n⏳ Admin will process your request shortly.", parse_mode="Markdown")
+        await update.message.reply_text(f"✅ *UPI WITHDRAWAL REQUEST SUBMITTED!*\n\n💰 Amount: Rs.{amount:.2f}\n🏦 UPI: {upi_id}\n\n⏳ Admin will process your request shortly.", parse_mode="Markdown")
 
 
 async def handle_upi_link(update, user_id, upi_id):
@@ -1794,7 +1794,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "refer_leaderboard": await handle_leaderboard(query)
     elif data.startswith("refer_tracker_"):
         async with turso_connect() as db: row = await (await db.execute("SELECT referral_count FROM user_balance WHERE user_id=?", (int(data.split("_")[-1]),))).fetchone()
-        await query.message.reply_text(f"👥 *REFER TRACKER*\n\n✅ *VERIFIED REFERRALS:* {row[0] if row else 0}\n💰 *TOTAL EARNED:* RS.{(row[0] if row else 0)*float(await get_setting('refer_reward','5')):.2f}", parse_mode="Markdown")
+        await query.message.reply_text(f"👥 *REFER TRACKER*\n\n6️⃣ *VERIFIED REFERRALS:* {row[0] if row else 0}\n💰 *TOTAL EARNED:* RS.{(row[0] if row else 0)*float(await get_setting('refer_reward','5')):.2f}", parse_mode="Markdown")
     elif data.startswith("bonus_daily_"):
         now = datetime.utcnow().isoformat()
         async with turso_connect() as db: row = await (await db.execute("SELECT balance, last_bonus_claim FROM user_balance WHERE user_id=?", (user_id,))).fetchone()
@@ -1850,6 +1850,11 @@ def validate_telegram_init_data(init_data: str, bot_token: str):
 
 # ===================== FASTAPI =====================
 
+class VerifyRequest(BaseModel):
+    init_data: str
+    device_id: str
+    persistent_id: str = ""
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _http_client
@@ -1870,7 +1875,6 @@ async def serve_verify_page():
     return Response(content=html_path.read_text(encoding="utf-8"), media_type="text/html", headers={"X-Frame-Options": "ALLOWALL", "Content-Security-Policy": "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:;", "Access-Control-Allow-Origin": "*", "Cache-Control": "no-cache"})
 
 
-# FIXED: Is logical core endpoint ke andar dono filters me reply_markup ko force load par lagaya hai!
 @app.post("/bot/api/verify-device")
 async def verify_device(payload: VerifyRequest, request: Request):
     user_data = validate_telegram_init_data(payload.init_data, BOT_TOKEN)
@@ -1911,7 +1915,6 @@ async def verify_device(payload: VerifyRequest, request: Request):
     
     try:
         keyboard = await get_user_keyboard_async(user_id)
-        # BUG FIXED HERE: Dono type ke text pushes me explicit layout keyboard inject kiya hai taaki window close hote hi keyboard automatic dikhe!
         if is_verified_by_device: 
             await bot_app_global.bot.send_message(chat_id=user_id, text="✅ *Device Verified Successfully!*", parse_mode="Markdown", reply_markup=keyboard)
         else: 
