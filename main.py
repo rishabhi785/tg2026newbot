@@ -30,7 +30,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.getenv("PORT", "8000"))
 
 TURSO_HTTP_URL = "https://botdb-rishabhi785.aws-ap-south-1.turso.io/v2/pipeline"
-TURSO_TOKEN = "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3Nzk3MDA0NTIsImlkIjoiMDE5ZTVlNjctNzIwMS03OTQwLWI3YTUtMjUxZmI5ZTQ4YTY2IiwicmlkIjoiZGQxNGI2NWBeLWYyODAtNGJjYy05OTM4LTcwODVhMGM0ODhlYiIn0.1uBpnSQhPDAfoLE8XCkhP_uQWp3i0egjA6QshsGFQxh2VrODIt07FRj4v2edrAcRwVReWqg2zKzQaTqTGoFZBA"
+TURSO_TOKEN = "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3Nzk3MDA0NTIsImlkIjoiMDE5ZTVlNjctNzIwMS03OTQwLWI3YTUtMjUxZmI5ZTQ4YTY2IiwicmlkIjoiZGQxNGI2NWItZjI4MC00YmNjLTk5MzgtNzA4NWEwYzQ4OGViIn0.1uBpnSQhPDAfoLE8XCkhP_uQWp3i0egjA6QshsGFQxh2VrODIt07FRj4v2edrAcRwVReWqg2zKzQaTqTGoFZBA"
 
 # ---- Turso HTTP API wrapper ----
 class TursoCursor:
@@ -401,7 +401,6 @@ async def send_join_message(update, user_id: int, bot=None):
         logger.warning(f"send_join_message failed (user may not have started bot): {e}")
 
 
-# FIXED: Strict integer character check lagaya h toggle feature synchronization ke liye!
 async def get_user_keyboard_async(user_id: int):
     b_bal = await get_setting("btn_balance", "1")
     b_ref = await get_setting("btn_refer", "1")
@@ -483,7 +482,7 @@ async def process_referral_and_verify(user_id: int, bot, is_verified_by_device=T
                 "UPDATE user_balance SET balance = balance + ?, referral_count = referral_count + 1 WHERE user_id=?",
                 (refer_reward, referrer_id_val)
             )
-            await db3.execute("DELETE FROM d_bot_settings WHERE key=?", (f"pending_referrer_{user_id}",))
+            await db3.execute("DELETE FROM bot_settings WHERE key=?", (f"pending_referrer_{user_id}",))
             await db3.commit()
 
         try:
@@ -1880,7 +1879,7 @@ async def serve_verify_page():
 async def verify_device(payload: VerifyRequest, request: Request):
     user_data = validate_telegram_init_data(payload.init_data, BOT_TOKEN)
     if not user_data: raise HTTPException(status_code=403, detail="Invalid session")
-    user_id = user_data.get("id")
+    user_id = int(user_data.get("id"))
     device_id = payload.device_id
     persistent_id = payload.persistent_id or ""
 
@@ -1888,14 +1887,17 @@ async def verify_device(payload: VerifyRequest, request: Request):
 
     is_verified_by_device = True
     async with turso_connect() as db:
+        # FIXED: Explicit int casting comparisons applied on all duplicate registry checks!
         row = await (await db.execute("SELECT user_id FROM device_registry WHERE device_id=?", (device_id,))).fetchone()
-        if row and row[0] != user_id: is_verified_by_device = False
+        if row and int(row[0]) != user_id: is_verified_by_device = False
+        
         if persistent_id and is_verified_by_device:
             p_row = await (await db.execute("SELECT user_id FROM persistent_device_registry WHERE persistent_id=?", (persistent_id,))).fetchone()
-            if p_row and p_row[0] != user_id: is_verified_by_device = False
+            if p_row and int(p_row[0]) != user_id: is_verified_by_device = False
+            
         if client_ip and is_verified_by_device:
             ip_row = await (await db.execute("SELECT user_id FROM ip_registry WHERE ip_address=?", (client_ip,))).fetchone()
-            if ip_row and ip_row[0] != user_id: is_verified_by_device = False
+            if ip_row and int(ip_row[0]) != user_id: is_verified_by_device = False
 
         if is_verified_by_device and not row: await db.execute("INSERT OR REPLACE INTO device_registry (device_id, user_id) VALUES (?, ?)", (device_id, user_id))
         if persistent_id and is_verified_by_device and not (p_row if persistent_id else None): await db.execute("INSERT OR REPLACE INTO persistent_device_registry (persistent_id, user_id) VALUES (?, ?)", (persistent_id, user_id))
@@ -1915,7 +1917,6 @@ async def verify_device(payload: VerifyRequest, request: Request):
     if was_verified == 0: await process_referral_and_verify(user_id, bot_app_global.bot, is_verified_by_device=is_verified_by_device)
     
     try:
-        # Dynamic keyboard generated here matching custom settings
         keyboard = await get_user_keyboard_async(user_id)
         if is_verified_by_device: 
             await bot_app_global.bot.send_message(chat_id=user_id, text="✅ *Device Verified Successfully!*", parse_mode="Markdown", reply_markup=keyboard)
@@ -1925,7 +1926,6 @@ async def verify_device(payload: VerifyRequest, request: Request):
         await bot_app_global.bot.send_message(chat_id=user_id, text=f"😍 Welcome, <b>{html.escape(str(user_data.get('first_name','User')))}</b>!\n\n💸 Earn Money • Refer Friends • Withdraw Instantly\n\n👇 Use button below to get started", parse_mode="HTML", reply_markup=keyboard)
     except Exception as e: logger.error(f"Menu error: {e}")
 
-    # FIXED: Response flow standard strict logic return!
     return {"status": "verified"} if is_verified_by_device else {"status": "failed"}
 
 @app.api_route("/bot/healthz", methods=["GET", "HEAD"])
