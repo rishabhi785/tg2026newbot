@@ -30,7 +30,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.getenv("PORT", "8000"))
 
 TURSO_HTTP_URL = "https://botdb-rishabhi785.aws-ap-south-1.turso.io/v2/pipeline"
-TURSO_TOKEN = "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3Nzk3MDA0NTIsImlkIjoiMDE5ZTVlNjctNzIwMS03OTQwLWI3YTUtMjUxZmI5ZTQ4YTY2IiwicmlkIjoiZGQxNGI2NWItZjI4MC00YmNjLTk5MzgtNzA4NWEwYzQ4OGViIn0.1uBpnSQhPDAfoLE8XCkhP_uQWp3i0egjA6QshsGFQxh2VrODIt07FRj4v2edrAcRwVReWqg2zKzQaZqTGoFZBA"
+TURSO_TOKEN = "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3Nzk3MDA0NTIsImlkIjoiMDE5ZTVlNjctNzIwMS03OTQwLWI3YTUtMjUxZmI5ZTQ4YTY2IiwicmlkIjoiZGQxNGI2NWItZjI4MC00YmNjLTk5MzgtNzA4NWEwYzQ4OGViIn0.1uBpnSQhPDAfoLE8XCkhP_uQWp3i0egjA6QshsGFQxh2VrODIt07FRj4v2edrAcRwVReWqg2zKzQaTqTGoFZBA"
 
 # ---- Turso HTTP API wrapper ----
 class TursoCursor:
@@ -138,7 +138,6 @@ VSV_TOKEN = "RTCLFTJV"
 
 bot_app_global = None
 
-# Shared HTTP client
 _http_client: httpx.AsyncClient = None
 
 async def get_http_client() -> httpx.AsyncClient:
@@ -195,7 +194,6 @@ async def init_db():
                 mobile TEXT
             )
         """)
-        # Dynamic migration for Ultra Pay column
         try:
             await db.execute("ALTER TABLE user_balance ADD COLUMN ultra_wallet TEXT")
             await db.commit()
@@ -282,9 +280,9 @@ async def init_db():
             ("btn_bonus", "1"),
             ("btn_withdraw", "1"),
             ("btn_link_upi", "1"),
-            ("btn_link_wallet", "1"), # generic wallet button
+            ("btn_link_wallet", "1"),
             ("btn_redeem", "1"),
-            ("ultra_pay_enabled", "0"), # Ultra Pay defaults
+            ("ultra_pay_enabled", "0"),
             ("ultrapay_token", ""),
             ("ultrapay_key", ""),
         ]
@@ -454,7 +452,6 @@ def get_admin_keyboard():
 
 
 async def send_main_menu(update: Update, name: str, user_id: int):
-    # HTML escape ki wajah se special characters (jese '_' ya '*') parse errors nahi denge
     safe_name = html.escape(str(name))
     await update.message.reply_text(
         f"😍 Welcome, <b>{safe_name}</b>!\n\n💸 Earn Money • Refer Friends • Withdraw Instantly\n\n👇 Use button below to get started",
@@ -462,12 +459,13 @@ async def send_main_menu(update: Update, name: str, user_id: int):
         parse_mode="HTML"
     )
 
-# --- Naya Function: Jo verification OFF hone par bhi referrer ko reward dega ---
-async def process_referral_and_verify(user_id: int, bot):
-    async with turso_connect() as db:
-        await db.execute("UPDATE users SET is_verified=1 WHERE user_id=?", (user_id,))
-        await db.commit()
-        
+
+async def process_referral_and_verify(user_id: int, bot, is_verified_by_device=True):
+    # Self-referral protection trigger
+    if not is_verified_by_device:
+        logger.info(f"Referral blocked for user {user_id} due to multiple IDs on same device.")
+        return
+
     async with turso_connect() as db2:
         referrer_row = await (await db2.execute(
             "SELECT value FROM bot_settings WHERE key=?",
@@ -557,16 +555,18 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if is_verified == 1 or verify_on == "0":
         if is_verified == 0 and verify_on == "0":
-            await process_referral_and_verify(user.id, context.bot)
-            
+            await process_referral_and_verify(user.id, context.bot, is_verified_by_device=True)
         await send_main_menu(update, user.first_name, user.id)
     else:
-        keyboard = [[InlineKeyboardButton("🟢 Verify Yourself", web_app=WebAppInfo(url=WEBAPP_URL), style="success")]]
-        await update.message.reply_text(
-            "🔐 *Verify Yourself To Start Bot*",
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode="Markdown"
-        )
+        if not is_new_user:
+            await send_main_menu(update, user.first_name, user.id)
+        else:
+            keyboard = [[InlineKeyboardButton("🟢 Verify Yourself", web_app=WebAppInfo(url=WEBAPP_URL), style="success")]]
+            await update.message.reply_text(
+                "🔐 *Verify Yourself To Start Bot*",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode="Markdown"
+            )
 
 
 async def check_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -635,9 +635,9 @@ async def check_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         except:
             pass
 
-    if is_verified == 1 or verify_on == "0":
+    if is_verified == 1 or verify_on == "0" or row:
         if is_verified == 0 and verify_on == "0":
-            await process_referral_and_verify(user.id, context.bot)
+            await process_referral_and_verify(user.id, context.bot, is_verified_by_device=True)
             
         try:
             await query.message.delete()
@@ -671,9 +671,10 @@ async def web_app_data_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                 reply_markup=await get_user_keyboard_async(user.id)
             )
             await send_main_menu(update, user.first_name, user.id)
-        elif payload.get("status") == "blocked":
+        elif payload.get("status") == "blocked" or payload.get("status") == "failed":
             await update.message.reply_text(
-                "❌ *VERIFICATION FAILED*\n\nThis device is already linked to another account.",
+                "❌ *VERIFICATION FAILED*\n\nMultiple IDs detected on this device. You can still use the bot features normally.",
+                reply_markup=await get_user_keyboard_async(user.id),
                 parse_mode="Markdown"
             )
         else:
@@ -739,23 +740,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await send_join_message(update, user_id)
         return
 
-    if not await is_admin(user_id):
-        verify_on = await get_setting("verification_enabled", "1")
-        if verify_on == "1":
-            async with turso_connect() as db:
-                row = await (await db.execute("SELECT is_verified FROM users WHERE user_id = ?", (user_id,))).fetchone()
-                is_verified = int(row[0]) if row and row[0] is not None else 0
-
-            if is_verified != 1:
-                keyboard = [[InlineKeyboardButton("🟢 Verify Yourself", web_app=WebAppInfo(url=WEBAPP_URL), style="success")]]
-                await update.message.reply_text(
-                    "🔐 *Verify Yourself To Start Bot*",
-                    reply_markup=InlineKeyboardMarkup(keyboard),
-                    parse_mode="Markdown"
-                )
-                return
-
-    # UPDATED: Button texts must exactly match the new emojis from get_user_keyboard_async
     if text == "🎁 Balance":
         await handle_balance(update, user_id)
     elif text == "🎀 Refer & Earn":
@@ -913,7 +897,7 @@ async def handle_admin_action_input(update: Update, context: ContextTypes.DEFAUL
             await db.commit()
         await update.message.reply_text(
             f"✅ Link Only Added: {name}\n\n"
-            f"📌 Koi verify nahi hoga — sirf link show hoga user ko.",
+            f"📌 Is type me bot koi bhi verify nahi karega — sirf link show hoga user ko.",
             reply_markup=get_admin_keyboard()
         )
         context.user_data['admin_action'] = None
@@ -1573,10 +1557,7 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE, 
 
     elif text == "Reset Database":
         await update.message.reply_text(
-            "\u26a0\ufe0f ARE YOU SURE?\n\n"
-            "This will DELETE all users, balances, referrals, device registrations.\n\n"
-            "Channels and settings will be kept.\n\n"
-            "Click Confirm Reset Database to proceed:",
+            "⚠️ ARE YOU SURE?\n\nThis will DELETE all users, balances, referrals, device registrations.\n\nChannels and settings will be kept.\n\nClick Confirm Reset Database to proceed:",
             reply_markup=ReplyKeyboardMarkup(
                 [[KeyboardButton("Confirm Reset Database")], [KeyboardButton("Back To Menu")]],
                 resize_keyboard=True
@@ -1594,7 +1575,7 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE, 
             await db.execute("DELETE FROM redeem_codes")
             await db.commit()
         await update.message.reply_text(
-            "\u2705 DATABASE RESET COMPLETE!\n\nAll users, balances, referrals and device data deleted.\nChannels and settings are intact.",
+            "✅ DATABASE RESET COMPLETE!\n\nAll users, balances, referrals and device data deleted.\nChannels and settings are intact.",
             reply_markup=get_admin_keyboard()
         )
 
@@ -1609,10 +1590,8 @@ async def handle_balance(update, user_id):
     async with turso_connect() as db:
         row = await (await db.execute("SELECT balance, referral_count FROM user_balance WHERE user_id = ?", (user_id,))).fetchone()
     balance = float(row[0]) if row and row[0] is not None else 0.0
-    refs = int(row[1]) if row and row[1] is not None else 0
     await update.message.reply_text(
-        f"💸 Balance: ₹{balance:.2f}\n\n"
-        f"🎉 Use \'🚀 Withdraw\' Button to Withdraw The Balance!",
+        f"💸 Balance: ₹{balance:.2f}\n\n🎉 Use '🚀 Withdraw' Button to Withdraw The Balance!",
         parse_mode="Markdown"
     )
 
@@ -1637,10 +1616,7 @@ async def handle_refer_earn(update, user_id, context):
     ]
 
     await update.message.reply_text(
-        f"🎁 Per Invite ₹{refer_reward} UPI Cash !!\n\n"
-        f"🎀 Invite Link : `{referral_link}`\n\n"
-        f"🎁 Daily bonus\n\n"
-        f"✅ Share Your Own Invite Link To Earn Unlimited Easy cash! 🤑",
+        f"🎁 Per Invite ₹{refer_reward} UPI Cash !!\n\n🎀 Invite Link : `{referral_link}`\n\n🎁 Daily bonus\n\n✅ Share Your Own Invite Link To Earn Unlimited Easy cash! 🤑",
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode="Markdown"
     )
@@ -1668,7 +1644,6 @@ async def handle_withdraw(update, user_id, context):
         return
 
     async with turso_connect() as db:
-        # Check ultra_wallet safely
         row = await (await db.execute("SELECT balance, upi_id, vsv_wallet, ultra_wallet FROM user_balance WHERE user_id = ?", (user_id,))).fetchone()
     balance = row[0] if row else 0.0
     upi_id = row[1] if row else None
@@ -1806,10 +1781,7 @@ async def handle_withdraw_amount(update, user_id, context, text):
             resp_text = resp.text.strip()
             if "success" in resp_text.lower() or resp_text == "1":
                 await update.message.reply_text(
-                    f"✅ *VSV WALLET PAYMENT SUCCESSFUL!*\n\n"
-                    f"💰 Amount: Rs.{amount:.2f}\n"
-                    f"💳 Wallet: {vsv_wallet}\n\n"
-                    f"Amount has been sent to your VSV Wallet!",
+                    f"✅ *VSV WALLET PAYMENT SUCCESSFUL!*\n\n💰 Amount: Rs.{amount:.2f}\n💳 Wallet: {vsv_wallet}\n\nAmount has been sent to your VSV Wallet!",
                     parse_mode="Markdown"
                 )
             else:
@@ -1839,19 +1811,13 @@ async def handle_withdraw_amount(update, user_id, context, text):
             await db.commit()
         try:
             admin_msg = (
-                f"💸 NEW UPI WITHDRAWAL REQUEST!\n\n"
-                f"User ID:\n`{user_id}`\n\n"
-                f"Amount:\n`Rs.{amount:.2f}`\n\n"
-                f"UPI ID:\n`{upi_id}`"
+                f"💸 NEW UPI WITHDRAWAL REQUEST!\n\nUser ID:\n`{user_id}`\n\nAmount:\n`Rs.{amount:.2f}`\n\nUPI ID:\n`{upi_id}`"
             )
             await update.get_bot().send_message(chat_id=ADMIN_ID, text=admin_msg, parse_mode="Markdown")
         except:
             pass
         await update.message.reply_text(
-            f"✅ *UPI WITHDRAWAL REQUEST SUBMITTED!*\n\n"
-            f"💰 Amount: Rs.{amount:.2f}\n"
-            f"🏦 UPI: {upi_id}\n\n"
-            f"⏳ Admin will process your request shortly.",
+            f"✅ *UPI WITHDRAWAL REQUEST SUBMITTED!*\n\n💰 Amount: Rs.{amount:.2f}\n🏦 UPI: {upi_id}\n\n⏳ Admin will process your request shortly.",
             parse_mode="Markdown"
         )
 
@@ -1913,9 +1879,7 @@ async def handle_redeem_code_menu(update, user_id, context):
         [InlineKeyboardButton("🎁 Use Gift Code", callback_data="redeem_use", style="success")],
     ]
     await update.message.reply_text(
-        "*REDEEM CODE*\n\n"
-        "🛒 *Buy A Redeem Code* — Purchase a code (min Rs.10) and receive it on your email.\n\n"
-        "*Use A Gift 🎁 Code* — Enter an existing code to add balance.",
+        "*REDEEM CODE*\n\n🛒 *Buy A Redeem Code* — Purchase a code (min Rs.10) and receive it on your email.\n\n*Use A Gift 🎁 Code* — Enter an existing code to add balance.",
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode="Markdown"
     )
@@ -1985,25 +1949,14 @@ async def handle_redeem_finalize(update, user_id, context, mobile):
 
     try:
         admin_msg = (
-            f"🎟️ NEW REDEEM CODE REQUEST!\n\n"
-            f"RDM ID: `{numeric_id}`\n"
-            f"Request Code: `{req_id}`\n"
-            f"User ID: `{user_id}`\n"
-            f"Amount: `Rs.{amount:.2f}`\n"
-            f"Email: `{email}`\n"
-            f"Mobile: `{mobile}`\n\n"
-            f"Use *Approve RDM* button and send RDM ID: `{numeric_id}` to approve."
+            f"🎟️ NEW REDEEM CODE REQUEST!\n\nRDM ID: `{numeric_id}`\nRequest Code: `{req_id}`\nUser ID: `{user_id}`\nAmount: `Rs.{amount:.2f}`\nEmail: `{email}`\nMobile: `{mobile}`\n\nUse *Approve RDM* button and send RDM ID: `{numeric_id}` to approve."
         )
         await bot_app_global.bot.send_message(chat_id=ADMIN_ID, text=admin_msg, parse_mode="Markdown")
     except Exception as e:
         logger.error(f"Admin notify error: {e}")
 
     await update.message.reply_text(
-        f"✅ *REDEEM CODE REQUEST SUBMITTED!*\n\n"
-        f"💰 Amount: Rs.{amount:.2f}\n"
-        f"📧 Email: {email}\n"
-        f"📱 Mobile: {mobile}\n\n"
-        f"⏳ Admin Will Send The Code To Your Email Shortly.",
+        f"✅ *REDEEM CODE REQUEST SUBMITTED!*\n\n💰 Amount: Rs.{amount:.2f}\n📧 Email: {email}\n📱 Mobile: {mobile}\n\n⏳ Admin Will Send The Code To Your Email Shortly.",
         parse_mode="Markdown"
     )
 
@@ -2077,9 +2030,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             row = await (await db.execute("SELECT referral_count FROM user_balance WHERE user_id=?", (target_uid,))).fetchone()
         count = row[0] if row else 0
         await query.message.reply_text(
-            f"🚀 *MY INVITES*\n\n"
-            f"👥 *TOTAL VERIFIED REFERRALS:* {count}\n\n"
-            f"_Keep sharing your link to earn more!_",
+            f"🚀 *MY INVITES*\n\n👥 *TOTAL VERIFIED REFERRALS:* {count}\n\n_Keep sharing your link to earn more!_",
             parse_mode="Markdown"
         )
 
@@ -2094,10 +2045,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         refer_reward = await get_setting("refer_reward", "5")
         earned = count * float(refer_reward)
         await query.message.reply_text(
-            f"👥 *REFER TRACKER*\n\n"
-            f"✅ *VERIFIED REFERRALS:* {count}\n"
-            f"💰 *TOTAL EARNED FROM REFERS:* RS.{earned:.2f}\n\n"
-            f"_Bonus is credited after each friend verifies their device._",
+            f"👥 *REFER TRACKER*\n\n✅ *VERIFIED REFERRALS:* {count}\n💰 *TOTAL EARNED FROM REFERS:* RS.{earned:.2f}\n\n_Bonus is credited after each friend verifies their device._",
             parse_mode="Markdown"
         )
 
@@ -2139,9 +2087,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             await db.commit()
         bonus_str = f"{daily_bonus_amount:.2f}"
-        await query.message.reply_text(
-            f"🎁 Bonus Rs.{bonus_str} Claimed Successfully"
-        )
+        await query.message.reply_text(f"🎁 Bonus Rs.{bonus_str} Claimed Successfully")
 
     elif data.startswith("bonus_gift_"):
         context.user_data['waiting_for'] = 'redeem_use'
@@ -2270,99 +2216,61 @@ async def verify_device(payload: VerifyRequest, request: Request):
     if not client_ip and request.client:
         client_ip = request.client.host or ""
 
+    is_verified_by_device = True
+
     async with turso_connect() as db:
         row = await (await db.execute("SELECT user_id FROM device_registry WHERE device_id=?", (device_id,))).fetchone()
         if row and row[0] != user_id:
-            return {"status": "blocked", "message": "Device already registered."}
+            is_verified_by_device = False
 
-        if persistent_id:
+        if persistent_id and is_verified_by_device:
             p_row = await (await db.execute("SELECT user_id FROM persistent_device_registry WHERE persistent_id=?", (persistent_id,))).fetchone()
             if p_row and p_row[0] != user_id:
-                return {"status": "blocked", "message": "Device already registered (persistent)."}
+                is_verified_by_device = False
 
-        if client_ip:
+        if client_ip and is_verified_by_device:
             ip_row = await (await db.execute("SELECT user_id FROM ip_registry WHERE ip_address=?", (client_ip,))).fetchone()
             if ip_row and ip_row[0] != user_id:
-                return {"status": "blocked", "message": "IP already registered."}
+                is_verified_by_device = False
 
-        if not row:
+        if is_verified_by_device and not row:
             await db.execute("INSERT OR REPLACE INTO device_registry (device_id, user_id) VALUES (?, ?)", (device_id, user_id))
-        if persistent_id and not (p_row if persistent_id else None):
+        if persistent_id and is_verified_by_device and not (p_row if persistent_id else None):
             await db.execute("INSERT OR REPLACE INTO persistent_device_registry (persistent_id, user_id) VALUES (?, ?)", (persistent_id, user_id))
-        if client_ip:
+        if client_ip and is_verified_by_device:
             await db.execute("INSERT OR REPLACE INTO ip_registry (ip_address, user_id) VALUES (?, ?)", (client_ip, user_id))
+        
         now = datetime.utcnow().isoformat()
-
         already_verified = await (await db.execute("SELECT is_verified FROM users WHERE user_id=?", (user_id,))).fetchone()
         was_verified = int(already_verified[0]) if already_verified and already_verified[0] is not None else 0
 
+        final_status = 1 if is_verified_by_device else 0
         await db.execute(
             """INSERT INTO users (user_id, username, first_name, is_verified, device_id, verified_at)
-               VALUES (?, ?, ?, 1, ?, ?)
-               ON CONFLICT(user_id) DO UPDATE SET is_verified=1, device_id=excluded.device_id, verified_at=excluded.verified_at""",
-            (user_id, user_data.get("username"), user_data.get("first_name"), device_id, now)
+               VALUES (?, ?, ?, ?, ?, ?)
+               ON CONFLICT(user_id) DO UPDATE SET is_verified=excluded.is_verified, device_id=excluded.device_id, verified_at=excluded.verified_at""",
+            (user_id, user_data.get("username"), user_data.get("first_name"), final_status, device_id, now)
         )
 
         existing_balance = await (await db.execute("SELECT balance FROM user_balance WHERE user_id=?", (user_id,))).fetchone()
-
         if not existing_balance:
             await db.execute("INSERT OR IGNORE INTO user_balance (user_id, balance) VALUES (?,?)", (user_id, 0.0))
-            await db.commit()
-
-        referrer_to_notify = None
-        referrer_reward_amount = 0.0
-
+        
         await db.commit()
 
     if was_verified == 0:
-        async with turso_connect() as db2:
-            referrer_row = await (await db2.execute(
-                "SELECT value FROM bot_settings WHERE key=?",
-                (f"pending_referrer_{user_id}",)
-            )).fetchone()
-
-        if referrer_row:
-            referrer_id_val = int(referrer_row[0])
-            refer_reward = float(await get_setting("refer_reward", "5"))
-            async with turso_connect() as db3:
-                await db3.execute(
-                    "INSERT OR IGNORE INTO user_balance (user_id, balance) VALUES (?, 0.0)",
-                    (referrer_id_val,)
-                )
-                await db3.execute(
-                    "UPDATE user_balance SET balance = balance + ?, referral_count = referral_count + 1 WHERE user_id=?",
-                    (refer_reward, referrer_id_val)
-                )
-                await db3.execute("DELETE FROM bot_settings WHERE key=?", (f"pending_referrer_{user_id}",))
-                await db3.commit()
-            referrer_to_notify = referrer_id_val
-            referrer_reward_amount = refer_reward
-
-
-    if referrer_to_notify:
-        try:
-            reward_str = f"{referrer_reward_amount:.2f}".replace(".", "\\.")
-            await bot_app_global.bot.send_message(
-                chat_id=referrer_to_notify,
-                text=(
-                    f"🎉 [User {user_id}](tg://user?id={user_id}) got invited by your URL\n"
-                    f"🎁 Rs\\.{reward_str} added to your balance"
-                ),
-                parse_mode="MarkdownV2"
-            )
-        except Exception as e:
-            logger.error(f"Referrer notify error: {e}")
+        await process_referral_and_verify(user_id, bot_app_global.bot, is_verified_by_device=is_verified_by_device)
 
     first_name = user_data.get("first_name", "User")
     safe_first_name = html.escape(str(first_name))
     
     try:
         keyboard = await get_user_keyboard_async(user_id)
-        await bot_app_global.bot.send_message(
-            chat_id=user_id,
-            text="✅ *Device Verified Successfully!*",
-            parse_mode="Markdown"
-        )
+        if is_verified_by_device:
+            await bot_app_global.bot.send_message(chat_id=user_id, text="✅ *Device Verified Successfully!*", parse_mode="Markdown")
+        else:
+            await bot_app_global.bot.send_message(chat_id=user_id, text="❌ *DEVICE VERIFICATION FAILED*\n\nMultiple IDs detected on this device. You can still use the bot features normally.", parse_mode="Markdown")
+        
         await bot_app_global.bot.send_message(
             chat_id=user_id,
             text=f"😍 Welcome, <b>{safe_first_name}</b>!\n\n💸 Earn Money • Refer Friends • Withdraw Instantly\n\n👇 Use button below to get started",
@@ -2372,7 +2280,10 @@ async def verify_device(payload: VerifyRequest, request: Request):
     except Exception as e:
         logger.error(f"Failed to send main menu after verification: {e}")
 
-    return {"status": "verified", "user": {"id": user_id, "first_name": user_data.get("first_name")}}
+    if is_verified_by_device:
+        return {"status": "verified", "user": {"id": user_id, "first_name": user_data.get("first_name")}}
+    else:
+        return {"status": "failed", "message": "Multiple IDs detected."}
 
 
 @app.api_route("/bot/healthz", methods=["GET", "HEAD"])
