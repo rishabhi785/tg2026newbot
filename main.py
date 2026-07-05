@@ -30,7 +30,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.getenv("PORT", "8000"))
 
 TURSO_HTTP_URL = "https://botdb-rishabhi785.aws-ap-south-1.turso.io/v2/pipeline"
-TURSO_TOKEN = "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3Nzk3MDA0NTIsImlkIjoiMDE5ZTVlNjctNzIwMS03OTQwLWI3YTUtMjUxZmI5ZTQ4YTY2IiwicmlkIjoiZGQxNGI2NWItZjI4MC00YmNjLTk5MzgtNzA4NWEwYzQ4OGViIn0.1uBpnSQhPDAfoLE8XCkhP_uQWp3i0egjA6QshsGFQxh2VrODIt07FRj4v2edrAcRwVReWqg2zKzQaZqTGoFZBA"
+TURSO_TOKEN = "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3Nzk3MDA0NTIsImlkIjoiMDE5ZTVlNjctNzIwMS03OTQwLWI3YTUtMjUxZmI5ZTQ4YTY2IiwicmlkIjoiZGQxNGI2NWItZjI4MC00YmNjLTk5MzgtNzA4NWEwYzQ4OGViIn0.1uBpnSQhPDAfoLE8XCkhP_uQWp3i0egjA6QshsGFQxh2VrODIt07FRj4v2edrAcRwVReWqg2zKzQaTqTGoFZBA"
 
 # ---- Turso HTTP API wrapper ----
 class TursoCursor:
@@ -137,8 +137,6 @@ VSV_API_URL = "https://vsv-gateway-solutions.co.in/Api/api.php"
 VSV_TOKEN = "RTCLFTJV"
 
 bot_app_global = None
-
-# Shared HTTP client
 _http_client: httpx.AsyncClient = None
 
 async def get_http_client() -> httpx.AsyncClient:
@@ -195,7 +193,6 @@ async def init_db():
                 mobile TEXT
             )
         """)
-        # Dynamic migration for Ultra Pay column
         try:
             await db.execute("ALTER TABLE user_balance ADD COLUMN ultra_wallet TEXT")
             await db.commit()
@@ -282,9 +279,9 @@ async def init_db():
             ("btn_bonus", "1"),
             ("btn_withdraw", "1"),
             ("btn_link_upi", "1"),
-            ("btn_link_wallet", "1"), 
+            ("btn_link_wallet", "1"),
             ("btn_redeem", "1"),
-            ("ultra_pay_enabled", "0"), 
+            ("ultra_pay_enabled", "0"),
             ("ultrapay_token", ""),
             ("ultrapay_key", ""),
         ]
@@ -446,15 +443,14 @@ def get_admin_keyboard():
         [KeyboardButton("Approve Withdrawal"), KeyboardButton("Reject Withdrawal")],
         [KeyboardButton("RDM Requests"), KeyboardButton("Approve RDM"), KeyboardButton("Reject RDM")],
         [KeyboardButton("Create Gift Code"), KeyboardButton("Toggle Buttons")],
-        [KeyboardButton("Reset Database"), KeyboardButton("Add Admin")],
-        [KeyboardButton("Remove Admin"), KeyboardButton("Admin List")],
-        [KeyboardButton("Back To Menu")],
+        [KeyboardButton("Reset Database"), KeyboardButton("Reset User Data")],
+        [KeyboardButton("Add Admin"), KeyboardButton("Remove Admin")],
+        [KeyboardButton("Admin List"), KeyboardButton("Back To Menu")],
     ]
     return ReplyKeyboardMarkup(rows, resize_keyboard=True, one_time_keyboard=False)
 
 
 async def send_main_menu(update: Update, name: str, user_id: int):
-    # HTML escape ki wajah se special characters parse errors nahi denge
     safe_name = html.escape(str(name))
     await update.message.reply_text(
         f"😍 Welcome, <b>{safe_name}</b>!\n\n💸 Earn Money • Refer Friends • Withdraw Instantly\n\n👇 Use button below to get started",
@@ -463,11 +459,11 @@ async def send_main_menu(update: Update, name: str, user_id: int):
     )
 
 
-async def process_referral_and_verify(user_id: int, bot):
-    async with turso_connect() as db:
-        await db.execute("UPDATE users SET is_verified=1 WHERE user_id=?", (user_id,))
-        await db.commit()
-        
+async def process_referral_and_verify(user_id: int, bot, is_verified_by_device=True):
+    if not is_verified_by_device:
+        logger.info(f"Referral blocked for user {user_id} due to multiple IDs on same device.")
+        return
+
     async with turso_connect() as db2:
         referrer_row = await (await db2.execute(
             "SELECT value FROM bot_settings WHERE key=?",
@@ -501,7 +497,6 @@ async def process_referral_and_verify(user_id: int, bot):
             )
         except Exception as e:
             logger.error(f"Referrer notify error: {e}")
-
 
 # ===================== COMMAND HANDLERS =====================
 
@@ -556,19 +551,20 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     verify_on = await get_setting("verification_enabled", "1")
 
-    # is_verified 1 = Verified, 2 = Duplicate device but allowed
-    if is_verified in (1, 2) or verify_on == "0":
+    if is_verified == 1 or verify_on == "0":
         if is_verified == 0 and verify_on == "0":
-            await process_referral_and_verify(user.id, context.bot)
-            
+            await process_referral_and_verify(user.id, context.bot, is_verified_by_device=True)
         await send_main_menu(update, user.first_name, user.id)
     else:
-        keyboard = [[InlineKeyboardButton("🟢 Verify Yourself", web_app=WebAppInfo(url=WEBAPP_URL), style="success")]]
-        await update.message.reply_text(
-            "🔐 *Verify Yourself To Start Bot*",
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode="Markdown"
-        )
+        if not is_new_user:
+            await send_main_menu(update, user.first_name, user.id)
+        else:
+            keyboard = [[InlineKeyboardButton("🟢 Verify Yourself", web_app=WebAppInfo(url=WEBAPP_URL), style="success")]]
+            await update.message.reply_text(
+                "🔐 *Verify Yourself To Start Bot*",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode="Markdown"
+            )
 
 
 async def check_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -637,10 +633,9 @@ async def check_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         except:
             pass
 
-    # is_verified 1 = Verified, 2 = Duplicate device but allowed
-    if is_verified in (1, 2) or verify_on == "0":
+    if is_verified == 1 or verify_on == "0" or row:
         if is_verified == 0 and verify_on == "0":
-            await process_referral_and_verify(user.id, context.bot)
+            await process_referral_and_verify(user.id, context.bot, is_verified_by_device=True)
             
         try:
             await query.message.delete()
@@ -667,24 +662,24 @@ async def web_app_data_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     context.user_data.clear()
     try:
         payload = json.loads(data)
-        status = payload.get("status", "")
-        
-        if status == "verified":
+        if payload.get("status") == "verified":
             await update.message.reply_text(
                 f"✅ *VERIFIED SUCCESSFULLY!*",
                 parse_mode="Markdown",
                 reply_markup=await get_user_keyboard_async(user.id)
             )
             await send_main_menu(update, user.first_name, user.id)
-        else:
-            # FIX: Agar verified ke alawa kuch bhi aata hai (blocked, failed, error), 
-            # to usko Duplicate/Allowed case maan ke Reply Keyboard send karenge.
+        elif payload.get("status") == "blocked" or payload.get("status") == "failed":
             await update.message.reply_text(
-                "❌ *VERIFICATION FAILED*\n\nThis device is already linked to another account.\n\n✅ _However, you can still use the bot's normal features!_",
-                parse_mode="Markdown",
-                reply_markup=await get_user_keyboard_async(user.id)
+                "❌ *VERIFICATION FAILED*\n\nMultiple IDs detected on this device. You can still use the bot features normally.",
+                reply_markup=await get_user_keyboard_async(user.id),
+                parse_mode="Markdown"
             )
-            await send_main_menu(update, user.first_name, user.id)
+        else:
+            await update.message.reply_text(
+                "❌ Verification failed. Please try /start again.",
+                parse_mode="Markdown"
+            )
     except Exception as e:
         logger.error(f"web_app_data error: {e}")
         await update.message.reply_text("⚠️ Something went wrong. Try /start again.")
@@ -704,7 +699,7 @@ async def combined_message_handler(update: Update, context: ContextTypes.DEFAULT
         "Update Channel", "Broadcast Message", "Set Refer Reward", "Set Min Withdrawal",
         "Set Daily Bonus", "Withdraw ON/OFF", "UPI Withdraw ON/OFF", "VSV Withdraw ON/OFF",
         "Ultra Pay ON/OFF", "Link Ultra Pay API", "Manual Balance", "Approve Withdrawal", 
-        "Reject Withdrawal", "Create Gift Code", "Reset Database", "Confirm Reset Database", "Back To Menu",
+        "Reject Withdrawal", "Create Gift Code", "Reset Database", "Reset User Data", "Confirm Reset Database", "Back To Menu",
         "RDM Requests", "Approve RDM", "Reject RDM",
         "Verification ON", "Verification OFF", "Refer Earn ON", "Refer Earn OFF",
         "Add Admin", "Remove Admin", "Admin List", "Toggle Buttons"
@@ -742,23 +737,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_member:
         await send_join_message(update, user_id)
         return
-
-    if not await is_admin(user_id):
-        verify_on = await get_setting("verification_enabled", "1")
-        if verify_on == "1":
-            async with turso_connect() as db:
-                row = await (await db.execute("SELECT is_verified FROM users WHERE user_id = ?", (user_id,))).fetchone()
-                is_verified = int(row[0]) if row and row[0] is not None else 0
-
-            # is_verified 1 = Verified, 2 = Duplicate device but allowed
-            if is_verified not in (1, 2):
-                keyboard = [[InlineKeyboardButton("🟢 Verify Yourself", web_app=WebAppInfo(url=WEBAPP_URL), style="success")]]
-                await update.message.reply_text(
-                    "🔐 *Verify Yourself To Start Bot*",
-                    reply_markup=InlineKeyboardMarkup(keyboard),
-                    parse_mode="Markdown"
-                )
-                return
 
     if text == "🎁 Balance":
         await handle_balance(update, user_id)
@@ -861,6 +839,24 @@ async def handle_admin_action_input(update: Update, context: ContextTypes.DEFAUL
         await handle_admin_panel_menu(update, context)
         return
 
+    if action == 'reset_user_data':
+        try:
+            target_uid = int(text.strip())
+            async with turso_connect() as db:
+                await db.execute("UPDATE users SET is_verified = 0, device_id = NULL, verified_at = NULL WHERE user_id = ?", (target_uid,))
+                await db.execute("UPDATE user_balance SET balance = 0.0, referral_count = 0, last_bonus_claim = NULL, upi_id = NULL, vsv_wallet = NULL, ultra_wallet = NULL, email = NULL, mobile = NULL WHERE user_id = ?", (target_uid,))
+                await db.execute("DELETE FROM device_registry WHERE user_id = ?", (target_uid,))
+                await db.execute("DELETE FROM ip_registry WHERE user_id = ?", (target_uid,))
+                await db.execute("DELETE FROM persistent_device_registry WHERE user_id = ?", (target_uid,))
+                await db.execute("DELETE FROM withdrawal_requests WHERE user_id = ?", (target_uid,))
+                await db.execute("DELETE FROM redeem_codes WHERE user_id = ?", (target_uid,))
+                await db.commit()
+            await update.message.reply_text(f"✅ *SUCCESS:* User `{target_uid}` data completely reset!\nDevice identities flushed.", parse_mode="Markdown", reply_markup=get_admin_keyboard())
+        except ValueError:
+            await update.message.reply_text("⚠️ Invalid format! Sirf numeric User ID bhejni hai.")
+        context.user_data['admin_action'] = None
+        return
+
     if action == 'add_channel':
         parts = text.split("|")
         if len(parts) < 2:
@@ -896,9 +892,7 @@ async def handle_admin_action_input(update: Update, context: ContextTypes.DEFAUL
             )
             await db.commit()
         await update.message.reply_text(
-            f"✅ Private Channel Added: {name}\n\n"
-            f"📌 ChatID: `{chat_id}`\n"
-            f"Bot member check karega — user channel leave kare to aage nahi badh sakta.",
+            f"✅ Private Channel Added: {name}\n\n📌 ChatID: `{chat_id}`\nBot member check karega — user channel leave kare to aage nahi badh sakta.",
             parse_mode="Markdown",
             reply_markup=get_admin_keyboard()
         )
@@ -916,8 +910,7 @@ async def handle_admin_action_input(update: Update, context: ContextTypes.DEFAUL
             await db.execute("INSERT INTO channels (channel_username, channel_link, channel_name, channel_type) VALUES (?,?,?,?)", (username, link, name, 'link_only'))
             await db.commit()
         await update.message.reply_text(
-            f"✅ Link Only Added: {name}\n\n"
-            f"📌 Koi verify nahi hoga — sirf link show hoga user ko.",
+            f"✅ Link Only Added: {name}\n\n📌 Is type me bot koi bhi verify nahi karega — sirf link show hoga user ko.",
             reply_markup=get_admin_keyboard()
         )
         context.user_data['admin_action'] = None
@@ -954,7 +947,7 @@ async def handle_admin_action_input(update: Update, context: ContextTypes.DEFAUL
         try:
             val = float(text)
             await set_setting("refer_reward", str(val))
-            await update.message.reply_text(f"✅ Refer Reward Set To Rs.{val}", reply_markup=get_admin_keyboard())
+            await update.message.reply_text(f"💵 *SET REFER REWARD*\n\nCurrent: Rs.{current}\n\nSend new amount:", parse_mode="Markdown")
         except:
             await update.message.reply_text("⚠️ Send a valid number.")
         context.user_data['admin_action'] = None
@@ -963,7 +956,7 @@ async def handle_admin_action_input(update: Update, context: ContextTypes.DEFAUL
         try:
             val = float(text)
             await set_setting("min_withdrawal", str(val))
-            await update.message.reply_text(f"✅ Minimum Withdrawal Set To Rs.{val}", reply_markup=get_admin_keyboard())
+            await update.message.reply_text(f"🔻 *SET MINIMUM WITHDRAWAL*\n\nCurrent: Rs.{current}\n\nSend new amount:", parse_mode="Markdown")
         except:
             await update.message.reply_text("⚠️ Send a valid number.")
         context.user_data['admin_action'] = None
@@ -981,7 +974,7 @@ async def handle_admin_action_input(update: Update, context: ContextTypes.DEFAUL
         try:
             val = float(text)
             await set_setting("daily_bonus", str(val))
-            await update.message.reply_text(f"✅ Daily Bonus Set To Rs.{val}", reply_markup=get_admin_keyboard())
+            await update.message.reply_text(f"🎁 SET DAILY BONUS\n\nCurrent: Rs.{current}\n\nSend new amount:")
         except:
             await update.message.reply_text("⚠️ Send a valid number.")
         context.user_data['admin_action'] = None
@@ -1096,12 +1089,7 @@ async def handle_admin_action_input(update: Update, context: ContextTypes.DEFAUL
                 await db.commit()
 
             await update.message.reply_text(
-                f"✅ RDM Request Approved!\n\n"
-                f"User ID: `{uid}`\n"
-                f"Amount: `Rs.{amount:.2f}`\n"
-                f"Email: `{email}`\n"
-                f"Mobile: `{mobile}`\n\n"
-                f"Please send the redeem code to the user's email manually.",
+                f"✅ RDM Request Approved!\n\nUser ID: `{uid}`\nAmount: `Rs.{amount:.2f}`\nEmail: `{email}`\nMobile: `{mobile}`\n\nPlease send the redeem code to the user's email manually.",
                 parse_mode="Markdown",
                 reply_markup=get_admin_keyboard()
             )
@@ -1110,10 +1098,7 @@ async def handle_admin_action_input(update: Update, context: ContextTypes.DEFAUL
                 await update.get_bot().send_message(
                     chat_id=uid,
                     text=(
-                        f"🎟️ *REDEEM CODE REQUEST APPROVED!*\n\n"
-                        f"💰 Amount: Rs.{amount:.2f}\n"
-                        f"📧 Email: {email}\n\n"
-                        f"✅ Your redeem code will be sent to your email shortly!"
+                        f"🎟️ *REDEEM CODE REQUEST APPROVED!*\n\n💰 Amount: Rs.{amount:.2f}\n📧 Email: {email}\n\nRef: code sent"
                     ),
                     parse_mode="Markdown"
                 )
@@ -1147,12 +1132,7 @@ async def handle_admin_action_input(update: Update, context: ContextTypes.DEFAUL
                 await db.commit()
 
             await update.message.reply_text(
-                f"❌ RDM Request Rejected!\n\n"
-                f"User ID: `{uid}`\n"
-                f"Amount: `Rs.{amount:.2f}`\n"
-                f"Email: `{email}`\n"
-                f"Mobile: `{mobile}`\n\n"
-                f"✅ Rs.{amount:.2f} refunded to user's balance.",
+                f"❌ RDM Request Rejected!\n\nUser ID: `{uid}`\nAmount: `Rs.{amount:.2f}`\nEmail: `{email}`\nMobile: `{mobile}`\n\n✅ Rs.{amount:.2f} refunded to user's balance.",
                 parse_mode="Markdown",
                 reply_markup=get_admin_keyboard()
             )
@@ -1161,10 +1141,7 @@ async def handle_admin_action_input(update: Update, context: ContextTypes.DEFAUL
                 await update.get_bot().send_message(
                     chat_id=uid,
                     text=(
-                        f"❌ *REDEEM CODE REQUEST REJECTED!*\n\n"
-                        f"💰 Amount: Rs.{amount:.2f}\n"
-                        f"📧 Email: {email}\n\n"
-                        f"✅ Rs.{amount:.2f} has been refunded to your wallet balance."
+                        f"❌ *REDEEM CODE REQUEST REJECTED!*\n\n💰 Amount: Rs.{amount:.2f}\n📧 Email: {email}\n\n✅ Rs.{amount:.2f} has been refunded to your wallet balance."
                     ),
                     parse_mode="Markdown"
                 )
@@ -1254,6 +1231,14 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     if not await is_admin(user_id):
         return
 
+    if text == "Reset User Data":
+        context.user_data['admin_action'] = 'reset_user_data'
+        await update.message.reply_text(
+            "👤 *RESET SPECIFIC USER DATA*\n\nBhai, jis user ka data poora clear karna hai uska Telegram *User ID* bhejo:",
+            parse_mode="Markdown"
+        )
+        return
+
     if text == "Toggle Buttons":
         keyboard = [
             [InlineKeyboardButton("Balance: " + ("✅ SHOW" if await get_setting("btn_balance", "1") == "1" else "❌ HIDE"), callback_data="tog_btn_balance")],
@@ -1275,76 +1260,43 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         new_val = "0" if current == "1" else "1"
         await set_setting("ultra_pay_enabled", new_val)
         status = "ENABLED ✅" if new_val == "1" else "DISABLED ❌"
-        await update.message.reply_text(
-            f"Ultra Pay Withdrawal Is Now: {status}",
-            reply_markup=get_admin_keyboard()
-        )
+        await update.message.reply_text(f"Ultra Pay Withdrawal Is Now: {status}", reply_markup=get_admin_keyboard())
 
     elif text == "Link Ultra Pay API":
         context.user_data['admin_action'] = 'set_ultrapay_token'
-        await update.message.reply_text(
-            "🔗 *LINK ULTRA PAY API*\n\nPlease send the Ultra Pay API *Token*:\n_(e.g., FsYU0Gx9AeMXP...)_",
-            parse_mode="Markdown"
-        )
+        await update.message.reply_text("🔗 *LINK ULTRA PAY API*\n\nPlease send the Ultra Pay API *Token*:\n_(e.g., FsYU0Gx9AeMXP...)_", parse_mode="Markdown")
 
     elif text == "Total Users":
         async with turso_connect() as db:
             total = int((await (await db.execute("SELECT COUNT(*) FROM users")).fetchone())[0])
-            # Only fully verified users will be counted here (is_verified = 1). Duplicates (2) are skipped.
             verified = int((await (await db.execute("SELECT COUNT(*) FROM users WHERE is_verified=1")).fetchone())[0])
-        await update.message.reply_text(
-            f"👥 *USER STATISTICS*\n\n"
-            f"📊 Total Users: {total}\n"
-            f"✅ Fully Verified Users: {verified}\n"
-            f"⏳ Unverified/Duplicate Users: {total - verified}",
-            parse_mode="Markdown",
-            reply_markup=get_admin_keyboard()
-        )
+        await update.message.reply_text(f"👥 *USER STATISTICS*\n\n📊 Total Users: {total}\n✅ Verified Users: {verified}\n⏳ Unverified Users: {total - verified}", parse_mode="Markdown", reply_markup=get_admin_keyboard())
 
     elif text == "Withdrawal Requests":
         async with turso_connect() as db:
-            rows = await (await db.execute(
-                "SELECT id, user_id, amount, method, upi_id, vsv_wallet, created_at FROM withdrawal_requests WHERE status='pending' ORDER BY created_at DESC LIMIT 20"
-            )).fetchall()
+            rows = await (await db.execute("SELECT id, user_id, amount, method, upi_id, vsv_wallet, created_at FROM withdrawal_requests WHERE status='pending' ORDER BY created_at DESC LIMIT 20")).fetchall()
         if not rows:
             await update.message.reply_text("✅ No Pending Withdrawal Requests.", reply_markup=get_admin_keyboard())
             return
         msg = "📋 PENDING WITHDRAWAL REQUESTS\n\n"
         for r in rows:
             msg += f"`ID: {r[0]} | User: {r[1]} | Rs.{r[2]} | {r[3].upper()}`\n"
-            if r[3] == 'upi':
-                msg += f"`UPI: {r[4]}`\n"
-            else:
-                msg += f"`VSV/ULTRA: {r[5]}`\n"
+            if r[3] == 'upi': msg += f"`UPI: {r[4]}`\n"
+            else: msg += f"`VSV/ULTRA: {r[5]}`\n"
             msg += f"`Date: {r[6][:10]}`\n\n"
         await update.message.reply_text(msg, reply_markup=get_admin_keyboard(), parse_mode="Markdown")
 
     elif text == "Add Channel":
         context.user_data['admin_action'] = 'add_channel'
-        await update.message.reply_text(
-            "➕ *ADD PUBLIC CHANNEL*\n\nSend channel details in this format:\n`ChannelName|@username|https://t.me/link`\n\n"
-            "📌 Public channel me bot member check karega.",
-            parse_mode="Markdown"
-        )
+        await update.message.reply_text("➕ *ADD PUBLIC CHANNEL*\n\nSend channel details in this format:\n`ChannelName|@username|https://t.me/link`\n\n📌 Public channel me bot member check karega.", parse_mode="Markdown")
 
     elif text == "Add Private Channel":
         context.user_data['admin_action'] = 'add_private_channel'
-        await update.message.reply_text(
-            "🔒 *ADD PRIVATE CHANNEL*\n\nSend channel details in this format:\n`ChannelName|-1001234567890|https://t.me/+invitelink`\n\n"
-            "📌 ChatID @userinfobot se pata karo:\n"
-            "1. Channel me koi message bhejo\n"
-            "2. Wo message @userinfobot ko forward karo\n"
-            "3. Forwarded chat ID copy karo",
-            parse_mode="Markdown"
-        )
+        await update.message.reply_text("🔒 *ADD PRIVATE CHANNEL*\n\nSend channel details in this format:\n`ChannelName|-1001234567890|https://t.me/+invitelink`\n\n📌 ChatID @userinfobot se pata karo:\n1. Channel me koi message bhejo\n2. Wo message @userinfobot ko forward karo\n3. Forwarded chat ID copy karo", parse_mode="Markdown")
 
     elif text == "Add Link Only":
         context.user_data['admin_action'] = 'add_link_only'
-        await update.message.reply_text(
-            "🔗 *ADD LINK ONLY*\n\nSend details in this format:\n`Name|dummy|https://koi-bhi-link.com`\n\n"
-            "📌 Is type me bot koi bhi verify nahi karega — sirf link show hoga user ko.",
-            parse_mode="Markdown"
-        )
+        await update.message.reply_text("🔗 *ADD LINK ONLY*\n\nSend details in this format:\n`Name|dummy|https://koi-bhi-link.com`\n\n📌 Is type me bot koi bhi verify nahi karega — sirf link show hoga user ko.", parse_mode="Markdown")
 
     elif text == "Remove Channel":
         async with turso_connect() as db:
@@ -1353,8 +1305,7 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE, 
             await update.message.reply_text("✅ No Active Channels.", reply_markup=get_admin_keyboard())
             return
         msg = "📋 ACTIVE CHANNELS\n\n"
-        for r in rows:
-            msg += f"ID: {r[0]} | {r[1] or r[2]} | @{r[2]}\n"
+        for r in rows: msg += f"ID: {r[0]} | {r[1] or r[2]} | @{r[2]}\n"
         msg += "\nSend the channel ID to remove:"
         context.user_data['admin_action'] = 'remove_channel'
         await update.message.reply_text(msg)
@@ -1366,8 +1317,7 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE, 
             await update.message.reply_text("✅ No Active Channels.", reply_markup=get_admin_keyboard())
             return
         msg = "📋 ACTIVE CHANNELS\n\n"
-        for r in rows:
-            msg += f"ID: {r[0]} | {r[1] or r[2]} | @{r[2]}\n"
+        for r in rows: msg += f"ID: {r[0]} | {r[1] or r[2]} | @{r[2]}\n"
         msg += "\nSend in format: ID|@newusername|https://newlink"
         context.user_data['admin_action'] = 'update_channel'
         await update.message.reply_text(msg)
@@ -1375,43 +1325,28 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     elif text == "Set Refer Reward":
         current = await get_setting("refer_reward", "5")
         context.user_data['admin_action'] = 'set_refer_reward'
-        await update.message.reply_text(
-            f"💵 *SET REFER REWARD*\n\nCurrent: Rs.{current}\n\nSend new amount:",
-            parse_mode="Markdown"
-        )
+        await update.message.reply_text(f"💵 *SET REFER REWARD*\n\nCurrent: Rs.{current}\n\nSend new amount:", parse_mode="Markdown")
 
     elif text == "Set Min Withdrawal":
         current = await get_setting("min_withdrawal", "50")
         context.user_data['admin_action'] = 'set_min_withdrawal'
-        await update.message.reply_text(
-            f"🔻 *SET MINIMUM WITHDRAWAL*\n\nCurrent: Rs.{current}\n\nSend new amount:",
-            parse_mode="Markdown"
-        )
+        await update.message.reply_text(f"🔻 *SET MINIMUM WITHDRAWAL*\n\nCurrent: Rs.{current}\n\nSend new amount:", parse_mode="Markdown")
 
     elif text == "Set Daily Bonus":
         current = await get_setting("daily_bonus", "1")
         context.user_data['admin_action'] = 'set_daily_bonus'
-        await update.message.reply_text(
-            f"🎁 SET DAILY BONUS\n\nCurrent: Rs.{current}\n\nSend new amount:",
-        )
+        await update.message.reply_text(f"🎁 SET DAILY BONUS\n\nCurrent: Rs.{current}\n\nSend new amount:")
 
     elif text == "Withdraw ON/OFF":
         current = await get_setting("withdrawal_enabled", "1")
         new_val = "0" if current == "1" else "1"
         await set_setting("withdrawal_enabled", new_val)
         status = "✅ ENABLED" if new_val == "1" else "❌ DISABLED"
-        await update.message.reply_text(
-            f"🔛 *WITHDRAWAL STATUS UPDATED*\n\nWithdrawal Is Now: {status}",
-            parse_mode="Markdown",
-            reply_markup=get_admin_keyboard()
-        )
+        await update.message.reply_text(f"🔛 *WITHDRAWAL STATUS UPDATED*\n\nWithdrawal Is Now: {status}", parse_mode="Markdown", reply_markup=get_admin_keyboard())
 
     elif text == "Add Admin":
         context.user_data['admin_action'] = 'add_admin'
-        await update.message.reply_text(
-            "👤 *ADD ADMIN*\n\nUser ID bhejo jise Admin banana hai:\n_(User ID @userinfobot se milega)_",
-            parse_mode="Markdown"
-        )
+        await update.message.reply_text("👤 *ADD ADMIN*\n\nUser ID bhejo jise Admin banana hai:\n_(User ID @userinfobot se milega)_", parse_mode="Markdown")
 
     elif text == "Remove Admin":
         context.user_data['admin_action'] = 'remove_admin'
@@ -1422,20 +1357,13 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE, 
             context.user_data['admin_action'] = None
         else:
             ids = "\n".join([f"`{r[0]}`" for r in rows])
-            await update.message.reply_text(
-                f"👤 *CURRENT ADMINS:*\n{ids}\n\nJis ko remove karna ho uska User ID bhejo:",
-                parse_mode="Markdown"
-            )
+            await update.message.reply_text(f"👤 *CURRENT ADMINS:*\n{ids}\n\nJis ko remove karna ho uska User ID bhejo:", parse_mode="Markdown")
 
     elif text == "Admin List":
         async with turso_connect() as db:
             rows = await (await db.execute("SELECT user_id FROM admins")).fetchall()
         ids = "\n".join([f"`{r[0]}`" for r in rows])
-        await update.message.reply_text(
-            f"👤 *ALL ADMINS:*\n{ids}",
-            parse_mode="Markdown",
-            reply_markup=get_admin_keyboard()
-        )
+        await update.message.reply_text(f"👤 *ALL ADMINS:*\n{ids}", parse_mode="Markdown", reply_markup=get_admin_keyboard())
 
     elif text == "Verification ON":
         await set_setting("verification_enabled", "1")
@@ -1455,23 +1383,15 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE, 
 
     elif text == "Broadcast Message":
         context.user_data['admin_action'] = 'broadcast'
-        await update.message.reply_text(
-            "📣 *BROADCAST MESSAGE*\n\nSend the message to broadcast to all users:",
-            parse_mode="Markdown"
-        )
+        await update.message.reply_text("📣 *BROADCAST MESSAGE*\n\nSend the message to broadcast to all users:", parse_mode="Markdown")
 
     elif text == "Manual Balance":
         context.user_data['admin_action'] = 'manual_balance'
-        await update.message.reply_text(
-            "✏️ *MANUAL BALANCE*\n\nSend in format:\n`UserID|Amount`\n\nExample: `123456|50`\nFor deduction: `123456|-20`",
-            parse_mode="Markdown"
-        )
+        await update.message.reply_text("✏️ *MANUAL BALANCE*\n\nSend in format:\n`UserID|Amount`\n\nExample: `123456|50`\nFor deduction: `123456|-20`", parse_mode="Markdown")
 
     elif text == "Approve Withdrawal":
         async with turso_connect() as db:
-            rows = await (await db.execute(
-                "SELECT id, user_id, amount, method, upi_id, vsv_wallet FROM withdrawal_requests WHERE status='pending' LIMIT 10"
-            )).fetchall()
+            rows = await (await db.execute("SELECT id, user_id, amount, method, upi_id, vsv_wallet FROM withdrawal_requests WHERE status='pending' LIMIT 10")).fetchall()
         if not rows:
             await update.message.reply_text("✅ No Pending Requests.", reply_markup=get_admin_keyboard())
             return
@@ -1485,108 +1405,70 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE, 
 
     elif text == "Reject Withdrawal":
         async with turso_connect() as db:
-            rows = await (await db.execute(
-                "SELECT id, user_id, amount, method FROM withdrawal_requests WHERE status='pending' LIMIT 10"
-            )).fetchall()
+            rows = await (await db.execute("SELECT id, user_id, amount, method FROM withdrawal_requests WHERE status='pending' LIMIT 10")).fetchall()
         if not rows:
             await update.message.reply_text("✅ No Pending Requests.", reply_markup=get_admin_keyboard())
             return
         msg = "📋 PENDING REQUESTS\n\n"
-        for r in rows:
-            msg += f"`ID: {r[0]} | User: {r[1]} | Rs.{r[2]} | {r[3].upper()}`\n"
+        for r in rows: msg += f"`ID: {r[0]} | User: {r[1]} | Rs.{r[2]} | {r[3].upper()}`\n"
         msg += "\nSend request ID to reject (amount will be refunded):"
         context.user_data['admin_action'] = 'reject_withdrawal'
         await update.message.reply_text(msg, parse_mode="Markdown")
 
     elif text == "RDM Requests":
         async with turso_connect() as db:
-            rows = await (await db.execute(
-                "SELECT id, user_id, amount, email, mobile, created_at FROM redeem_codes WHERE status='pending' AND code LIKE 'REQ-%' ORDER BY created_at DESC LIMIT 10"
-            )).fetchall()
+            rows = await (await db.execute("SELECT id, user_id, amount, email, mobile, created_at FROM redeem_codes WHERE status='pending' AND code LIKE 'REQ-%' ORDER BY created_at DESC LIMIT 10")).fetchall()
         if not rows:
             await update.message.reply_text("✅ No Pending RDM Requests.", reply_markup=get_admin_keyboard())
             return
         msg = "🎟️ PENDING RDM REQUESTS\n\n"
         for r in rows:
-            msg += (
-                f"`RDM ID: {r[0]}`\n"
-                f"`User ID: {r[1]}`\n"
-                f"`Amount: Rs.{r[2]}`\n"
-                f"`Email: {r[3]}`\n"
-                f"`Mobile: {r[4]}`\n"
-                f"`Date: {str(r[5])[:10]}`\n\n"
-            )
+            msg += f"`RDM ID: {r[0]}`\n`User ID: {r[1]}`\n`Amount: Rs.{r[2]}`\n`Email: {r[3]}`\n`Mobile: {r[4]}`\n`Date: {str(r[5])[:10]}`\n\n"
         msg += "Use *Approve RDM* button to approve a request."
         await update.message.reply_text(msg, parse_mode="Markdown", reply_markup=get_admin_keyboard())
 
     elif text == "Approve RDM":
         async with turso_connect() as db:
-            rows = await (await db.execute(
-                "SELECT id, user_id, amount, email FROM redeem_codes WHERE status='pending' AND code LIKE 'REQ-%' ORDER BY created_at DESC LIMIT 10"
-            )).fetchall()
+            rows = await (await db.execute("SELECT id, user_id, amount, email FROM redeem_codes WHERE status='pending' AND code LIKE 'REQ-%' ORDER BY created_at DESC LIMIT 10")).fetchall()
         if not rows:
             await update.message.reply_text("✅ No Pending RDM Requests.", reply_markup=get_admin_keyboard())
             return
         msg = "🎟️ PENDING RDM REQUESTS\n\n"
-        for r in rows:
-            msg += f"`RDM ID: {r[0]} | User: {r[1]} | Rs.{r[2]}`\n`Email: {r[3]}`\n\n"
+        for r in rows: msg += f"`RDM ID: {r[0]} | User: {r[1]} | Rs.{r[2]}`\n`Email: {r[3]}`\n\n"
         msg += "Send RDM ID to approve:"
         context.user_data['admin_action'] = 'approve_rdm'
         await update.message.reply_text(msg, parse_mode="Markdown")
 
     elif text == "Reject RDM":
         async with turso_connect() as db:
-            rows = await (await db.execute(
-                "SELECT id, user_id, amount, email FROM redeem_codes WHERE status='pending' AND code LIKE 'REQ-%' ORDER BY created_at DESC LIMIT 10"
-            )).fetchall()
+            rows = await (await db.execute("SELECT id, user_id, amount, email FROM redeem_codes WHERE status='pending' AND code LIKE 'REQ-%' ORDER BY created_at DESC LIMIT 10")).fetchall()
         if not rows:
             await update.message.reply_text("✅ No Pending RDM Requests.", reply_markup=get_admin_keyboard())
             return
         msg = "🎟️ PENDING RDM REQUESTS\n\n"
-        for r in rows:
-            msg += f"`RDM ID: {r[0]} | User: {r[1]} | Rs.{r[2]}`\n`Email: {r[3]}`\n\n"
+        for r in rows: msg += f"`RDM ID: {r[0]} | User: {r[1]} | Rs.{r[2]}`\n`Email: {r[3]}`\n\n"
         msg += "Send RDM ID to reject (balance will be refunded):"
         context.user_data['admin_action'] = 'reject_rdm'
         await update.message.reply_text(msg, parse_mode="Markdown")
 
     elif text == "Create Gift Code":
         context.user_data['admin_action'] = 'create_gift_code'
-        await update.message.reply_text(
-            "🎁 CREATE GIFT CODE\n\nFormat: Amount|Code\nExample: 50|GIFT2024\n\nOr just send amount to auto-generate code:",
-            parse_mode=None
-        )
+        await update.message.reply_text("🎁 CREATE GIFT CODE\n\nFormat: Amount|Code\nExample: 50|GIFT2024\n\nOr just send amount to auto-generate code:", parse_mode=None)
 
     elif text == "UPI Withdraw ON/OFF":
         current = await get_setting("upi_withdrawal_enabled", "1")
         new_val = "0" if current == "1" else "1"
         await set_setting("upi_withdrawal_enabled", new_val)
-        status = "ENABLED" if new_val == "1" else "DISABLED"
-        await update.message.reply_text(
-            f"UPI Withdrawal Is Now: {status}",
-            reply_markup=get_admin_keyboard()
-        )
+        await update.message.reply_text(f"UPI Withdrawal Is Now: {'ENABLED' if new_val == '1' else 'DISABLED'}", reply_markup=get_admin_keyboard())
 
     elif text == "VSV Withdraw ON/OFF":
         current = await get_setting("vsv_withdrawal_enabled", "1")
         new_val = "0" if current == "1" else "1"
         await set_setting("vsv_withdrawal_enabled", new_val)
-        status = "ENABLED" if new_val == "1" else "DISABLED"
-        await update.message.reply_text(
-            f"VSV Withdrawal Is Now: {status}",
-            reply_markup=get_admin_keyboard()
-        )
+        await update.message.reply_text(f"VSV Withdrawal Is Now: {'ENABLED' if new_val == '1' else 'DISABLED'}", reply_markup=get_admin_keyboard())
 
     elif text == "Reset Database":
-        await update.message.reply_text(
-            "\u26a0\ufe0f ARE YOU SURE?\n\n"
-            "This will DELETE all users, balances, referrals, device registrations.\n\n"
-            "Channels and settings will be kept.\n\n"
-            "Click Confirm Reset Database to proceed:",
-            reply_markup=ReplyKeyboardMarkup(
-                [[KeyboardButton("Confirm Reset Database")], [KeyboardButton("Back To Menu")]],
-                resize_keyboard=True
-            )
-        )
+        await update.message.reply_text("⚠️ ARE YOU SURE?\n\nThis will DELETE all users, balances, referrals, device registrations.\n\nChannels and settings will be kept.\n\nClick Confirm Reset Database to proceed:", reply_markup=ReplyKeyboardMarkup([[KeyboardButton("Confirm Reset Database")], [KeyboardButton("Back To Menu")]], resize_keyboard=True))
 
     elif text == "Confirm Reset Database":
         async with turso_connect() as db:
@@ -1598,10 +1480,7 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE, 
             await db.execute("DELETE FROM withdrawal_requests")
             await db.execute("DELETE FROM redeem_codes")
             await db.commit()
-        await update.message.reply_text(
-            "\u2705 DATABASE RESET COMPLETE!\n\nAll users, balances, referrals and device data deleted.\nChannels and settings are intact.",
-            reply_markup=get_admin_keyboard()
-        )
+        await update.message.reply_text("✅ DATABASE RESET COMPLETE!\n\nAll users, balances, referrals and device data deleted.\nChannels and settings are intact.", reply_markup=get_admin_keyboard())
 
     elif text == "Back To Menu":
         context.user_data.clear()
@@ -1614,12 +1493,7 @@ async def handle_balance(update, user_id):
     async with turso_connect() as db:
         row = await (await db.execute("SELECT balance, referral_count FROM user_balance WHERE user_id = ?", (user_id,))).fetchone()
     balance = float(row[0]) if row and row[0] is not None else 0.0
-    refs = int(row[1]) if row and row[1] is not None else 0
-    await update.message.reply_text(
-        f"💸 Balance: ₹{balance:.2f}\n\n"
-        f"🎉 Use \'🚀 Withdraw\' Button to Withdraw The Balance!",
-        parse_mode="Markdown"
-    )
+    await update.message.reply_text(f"💸 Balance: ₹{balance:.2f}\n\n🎉 Use '🚀 Withdraw' Button to Withdraw The Balance!", parse_mode="Markdown")
 
 
 async def handle_refer_earn(update, user_id, context):
@@ -1634,42 +1508,19 @@ async def handle_refer_earn(update, user_id, context):
     bot_username = context.bot.username or "bot"
     referral_link = f"https://t.me/{bot_username}?start={user_id}"
 
-    keyboard = [
-        [
-            InlineKeyboardButton("🎀 MY INVITES", callback_data=f"refer_invites_{user_id}", style="primary"),
-            InlineKeyboardButton("🏆 LEADERBOARD", callback_data="refer_leaderboard", style="primary"),
-        ],
-    ]
-
-    await update.message.reply_text(
-        f"🎁 Per Invite ₹{refer_reward} UPI Cash !!\n\n"
-        f"🎀 Invite Link : `{referral_link}`\n\n"
-        f"🎁 Daily bonus\n\n"
-        f"✅ Share Your Own Invite Link To Earn Unlimited Easy cash! 🤑",
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode="Markdown"
-    )
+    keyboard = [[InlineKeyboardButton("🎀 MY INVITES", callback_data=f"refer_invites_{user_id}", style="primary"), InlineKeyboardButton("🏆 LEADERBOARD", callback_data="refer_leaderboard", style="primary")]]
+    await update.message.reply_text(f"🎁 Per Invite ₹{refer_reward} UPI Cash !!\n\n🎀 Invite Link : `{referral_link}`\n\n🎁 Daily bonus\n\n✅ Share Your Own Invite Link To Earn Unlimited Easy cash! 🤑", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
 
 async def handle_bonus(update, user_id):
-    keyboard = [
-        [InlineKeyboardButton("DAILY BONUS", callback_data=f"bonus_daily_{user_id}", style="success")],
-        [InlineKeyboardButton("GIFT CODE", callback_data=f"bonus_gift_{user_id}", style="primary")],
-    ]
-    await update.message.reply_text(
-        "✨ *CHOOSE ONE:*",
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode="Markdown"
-    )
+    keyboard = [[InlineKeyboardButton("DAILY BONUS", callback_data=f"bonus_daily_{user_id}", style="success")], [InlineKeyboardButton("GIFT CODE", callback_data=f"bonus_gift_{user_id}", style="primary")]]
+    await update.message.reply_text("✨ *CHOOSE ONE:*", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
 
 async def handle_withdraw(update, user_id, context):
     withdrawal_enabled = await get_setting("withdrawal_enabled", "1")
     if withdrawal_enabled == "0":
-        await update.message.reply_text(
-            "🔒 *WITHDRAWALS DISABLED*\n\nWithdrawals are currently disabled. Please try again later.",
-            parse_mode="Markdown"
-        )
+        await update.message.reply_text("🔒 *WITHDRAWALS DISABLED*\n\nWithdrawals are currently disabled. Please try again later.", parse_mode="Markdown")
         return
 
     async with turso_connect() as db:
@@ -1682,16 +1533,11 @@ async def handle_withdraw(update, user_id, context):
     min_withdrawal = float(await get_setting("min_withdrawal", "50"))
 
     if balance < min_withdrawal:
-        await update.message.reply_text(
-            f"😵 INSUFFICIENT BALANCE — Minimum Withdrawal Is Rs.{min_withdrawal:.0f}"
-        )
+        await update.message.reply_text(f"😵 INSUFFICIENT BALANCE — Minimum Withdrawal Is Rs.{min_withdrawal:.0f}")
         return
 
     if not upi_id and not vsv_wallet and not ultra_wallet:
-        await update.message.reply_text(
-            "⚠️ *PAYMENT METHOD REQUIRED*\n\nPlease link your UPI ID, VSV Wallet, or Ultra Pay first before withdrawing.",
-            parse_mode="Markdown"
-        )
+        await update.message.reply_text("⚠️ *PAYMENT METHOD REQUIRED*\n\nPlease link your UPI ID, VSV Wallet, or Ultra Pay first before withdrawing.", parse_mode="Markdown")
         return
 
     context.user_data['withdraw_balance'] = balance
@@ -1704,28 +1550,19 @@ async def handle_withdraw(update, user_id, context):
     ultra_enabled = await get_setting("ultra_pay_enabled", "0")
 
     keyboard = []
-    if ultra_wallet and ultra_enabled == "1":
-        keyboard.append([InlineKeyboardButton("✅ ULTRA PAY CLICK", callback_data=f"wd_ultra_{user_id}", style="success")])
-    if vsv_wallet and vsv_enabled == "1":
-        keyboard.append([InlineKeyboardButton("✅ VSV CLICK", callback_data=f"wd_vsv_{user_id}", style="success")])
-    if upi_id and upi_enabled == "1":
-        keyboard.append([InlineKeyboardButton("✅ UPI CLICK", callback_data=f"wd_upi_{user_id}", style="success")])
+    if ultra_wallet and ultra_enabled == "1": keyboard.append([InlineKeyboardButton("✅ ULTRA PAY CLICK", callback_data=f"wd_ultra_{user_id}", style="success")])
+    if vsv_wallet and vsv_enabled == "1": keyboard.append([InlineKeyboardButton("✅ VSV CLICK", callback_data=f"wd_vsv_{user_id}", style="success")])
+    if upi_id and upi_enabled == "1": keyboard.append([InlineKeyboardButton("✅ UPI CLICK", callback_data=f"wd_upi_{user_id}", style="success")])
 
     if not keyboard:
-        await update.message.reply_text(
-            "🔒 Withdrawals for your linked methods are currently disabled by admin. Please try again later.",
-        )
+        await update.message.reply_text("🔒 Withdrawals for your linked methods are currently disabled by admin. Please try again later.")
         return
 
-    await update.message.reply_text(
-        "✨ SELECT PAYMENT METHOD FOR WITHDRAWAL",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
+    await update.message.reply_text("✨ SELECT PAYMENT METHOD FOR WITHDRAWAL", reply_markup=InlineKeyboardMarkup(keyboard))
 
 
 async def handle_withdraw_amount(update, user_id, context, text):
-    try:
-        amount = float(text)
+    try: amount = float(text)
     except:
         await update.message.reply_text("Please send a valid amount.")
         return
@@ -1743,9 +1580,7 @@ async def handle_withdraw_amount(update, user_id, context, text):
         await update.message.reply_text(f"❌ Insufficient Balance. Your Balance: Rs.{balance:.2f}")
         return
 
-    if not method:
-        method = 'vsv' if vsv_wallet and not upi_id else 'upi'
-
+    if not method: method = 'vsv' if vsv_wallet and not upi_id else 'upi'
     context.user_data['waiting_for'] = None
 
     if method == 'ultra':
@@ -1761,25 +1596,14 @@ async def handle_withdraw_amount(update, user_id, context, text):
             await db.execute("UPDATE user_balance SET balance = balance - ? WHERE user_id=?", (amount, user_id))
             await db.commit()
 
-        ultra_url = f"https://ultra-pay.store/APIs/api"
-        params = {
-            "token": api_token,
-            "key": api_key,
-            "paytoNumber": ultra_wallet,
-            "amount": str(int(amount)),
-            "comment": "Withdrawal from Bot"
-        }
+        ultra_url = "https://ultra-pay.store/APIs/api"
+        params = {"token": api_token, "key": api_key, "paytoNumber": ultra_wallet, "amount": str(int(amount)), "comment": "Withdrawal from Bot"}
 
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(ultra_url, params=params, timeout=15)
-            
+            async with httpx.AsyncClient() as client: resp = await client.get(ultra_url, params=params, timeout=15)
             resp_text = resp.text.lower()
             if "success" in resp_text or '"status": true' in resp_text or '"status":true' in resp_text:
-                await update.message.reply_text(
-                    f"✅ *ULTRA PAY PAYMENT SUCCESSFUL!*\n\n💰 Amount: Rs.{amount:.2f}\n📱 Number: {ultra_wallet}",
-                    parse_mode="Markdown"
-                )
+                await update.message.reply_text(f"✅ *ULTRA PAY PAYMENT SUCCESSFUL!*\n\n💰 Amount: Rs.{amount:.2f}\n📱 Number: {ultra_wallet}", parse_mode="Markdown")
             else:
                 async with turso_connect() as db:
                     await db.execute("UPDATE user_balance SET balance = balance + ? WHERE user_id=?", (amount, user_id))
@@ -1797,67 +1621,31 @@ async def handle_withdraw_amount(update, user_id, context, text):
             await db.commit()
         try:
             async with httpx.AsyncClient() as client:
-                resp = await client.get(
-                    VSV_API_URL,
-                    params={
-                        "token": VSV_TOKEN,
-                        "paytm": vsv_wallet,
-                        "amount": str(int(amount)),
-                        "comment": "Withdrawal from UPI Giveaway Bot",
-                    },
-                    timeout=15
-                )
+                resp = await client.get(VSV_API_URL, params={"token": VSV_TOKEN, "paytm": vsv_wallet, "amount": str(int(amount)), "comment": "Withdrawal from UPI Giveaway Bot"}, timeout=15)
             resp_text = resp.text.strip()
             if "success" in resp_text.lower() or resp_text == "1":
-                await update.message.reply_text(
-                    f"✅ *VSV WALLET PAYMENT SUCCESSFUL!*\n\n"
-                    f"💰 Amount: Rs.{amount:.2f}\n"
-                    f"💳 Wallet: {vsv_wallet}\n\n"
-                    f"Amount has been sent to your VSV Wallet!",
-                    parse_mode="Markdown"
-                )
+                await update.message.reply_text(f"✅ *VSV WALLET PAYMENT SUCCESSFUL!*\n\n💰 Amount: Rs.{amount:.2f}\n💳 Wallet: {vsv_wallet}\n\nAmount has been sent to your VSV Wallet!", parse_mode="Markdown")
             else:
                 async with turso_connect() as db:
                     await db.execute("UPDATE user_balance SET balance = balance + ? WHERE user_id=?", (amount, user_id))
                     await db.commit()
-                await update.message.reply_text(
-                    f"❌ *VSV PAYMENT FAILED!*\n\nYour balance has been refunded. Please try again.",
-                    parse_mode="Markdown"
-                )
+                await update.message.reply_text(f"❌ *VSV PAYMENT FAILED!*\n\nYour balance has been refunded. Please try again.", parse_mode="Markdown")
         except Exception as e:
             async with turso_connect() as db:
                 await db.execute("UPDATE user_balance SET balance = balance + ? WHERE user_id=?", (amount, user_id))
                 await db.commit()
-            await update.message.reply_text(
-                "❌ *VSV PAYMENT ERROR!*\n\nYour balance has been refunded. Please try again.",
-                parse_mode="Markdown"
-            )
+            await update.message.reply_text("❌ *VSV PAYMENT ERROR!*\n\nYour balance has been refunded. Please try again.", parse_mode="Markdown")
 
     elif method == 'upi' and upi_id:
         async with turso_connect() as db:
             await db.execute("UPDATE user_balance SET balance = balance - ? WHERE user_id=?", (amount, user_id))
-            await db.execute(
-                "INSERT INTO withdrawal_requests (user_id, amount, upi_id, vsv_wallet, method) VALUES (?,?,?,?,?)",
-                (user_id, amount, upi_id, vsv_wallet, method)
-            )
+            await db.execute("INSERT INTO withdrawal_requests (user_id, amount, upi_id, vsv_wallet, method) VALUES (?,?,?,?,?)", (user_id, amount, upi_id, vsv_wallet, method))
             await db.commit()
         try:
-            admin_msg = (
-                f"💸 NEW UPI WITHDRAWAL REQUEST!\n\n"
-                f"User ID:\n`{user_id}`\n\n"
-                f"Amount:\n`Rs.{amount:.2f}`\n\n"
-                f"UPI ID:\n`{upi_id}`"
-            )
+            admin_msg = f"💸 NEW UPI WITHDRAWAL REQUEST!\n\nUser ID:\n`{user_id}`\n\nAmount:\n`Rs.{amount:.2f}`\n\nUPI ID:\n`{upi_id}`"
             await update.get_bot().send_message(chat_id=ADMIN_ID, text=admin_msg, parse_mode="Markdown")
-        except:
-            pass
-        await update.message.reply_text(
-            f"✅ *UPI WITHDRAWAL REQUEST SUBMITTED!*\n\n"
-            f"💰 Amount: Rs.{amount:.2f}\n"
-            f"🏦 UPI: {upi_id}\n\n"
-            f"⏳ Admin will process your request shortly.",
-            parse_mode="Markdown"
-        )
+        except: pass
+        await update.message.reply_text(f"✅ *UPI WITHDRAWAL REQUEST SUBMITTED!*\n\n💰 Amount: Rs.{amount:.2f}\nSUP UPI: {upi_id}\n\n⏳ Admin will process your request shortly.", parse_mode="Markdown")
 
 
 async def handle_upi_link(update, user_id, upi_id):
@@ -1867,10 +1655,7 @@ async def handle_upi_link(update, user_id, upi_id):
     async with turso_connect() as db:
         await db.execute("UPDATE user_balance SET upi_id = ? WHERE user_id = ?", (upi_id, user_id))
         await db.commit()
-    await update.message.reply_text(
-        f"✅ *UPI ID LINKED!*\n\n🏦 UPI: `{upi_id}`",
-        parse_mode="Markdown"
-    )
+    await update.message.reply_text(f"✅ *UPI ID LINKED!*\n\n🏦 UPI: `{upi_id}`", parse_mode="Markdown")
 
 
 async def handle_vsv_link(update, user_id, vsv_number):
@@ -1881,22 +1666,14 @@ async def handle_vsv_link(update, user_id, vsv_number):
     async with turso_connect() as db:
         await db.execute("UPDATE user_balance SET vsv_wallet = ? WHERE user_id = ?", (vsv_number, user_id))
         await db.commit()
-    await update.message.reply_text(
-        f"✅ *VSV WALLET LINKED!*\n\n💳 Wallet: `{vsv_number}`",
-        parse_mode="Markdown"
-    )
+    await update.message.reply_text(f"✅ *VSV WALLET LINKED!*\n\n💳 Wallet: `{vsv_number}`", parse_mode="Markdown")
 
 
 async def handle_leaderboard(update):
     async with turso_connect() as db:
-        rows = await (await db.execute(
-            "SELECT b.user_id, b.referral_count FROM user_balance b JOIN users u ON b.user_id=u.user_id ORDER BY b.referral_count DESC LIMIT 13"
-        )).fetchall()
-
+        rows = await (await db.execute("SELECT b.user_id, b.referral_count FROM user_balance b JOIN users u ON b.user_id=u.user_id ORDER BY b.referral_count DESC LIMIT 13")).fetchall()
     rank_emojis = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "1️⃣1️⃣", "1️⃣2️⃣", "1️⃣3️⃣"]
-
-    if not rows:
-        msg = "😍 TOP USERS WITH MOST REFERS\n\nNo data available yet!"
+    if not rows: msg = "😍 TOP USERS WITH MOST REFERS\n\nNo data available yet!"
     else:
         msg = "😍 TOP USERS WITH MOST REFERS\n\n"
         for i, r in enumerate(rows):
@@ -1904,112 +1681,61 @@ async def handle_leaderboard(update):
             masked_id = uid[:2] + "*****" + uid[-3:] if len(uid) >= 6 else uid
             rank_emoji = rank_emojis[i] if i < len(rank_emojis) else f"{i+1}."
             msg += f"{rank_emoji} Top {i+1}:\nUser ID: {masked_id}\nVerified Refers: {r[1]}\n\n"
-
-    if hasattr(update, 'message') and update.message:
-        await update.message.reply_text(msg)
-    else:
-        await update.reply_text(msg)
+    if hasattr(update, 'message') and update.message: await update.message.reply_text(msg)
+    else: await update.reply_text(msg)
 
 
 async def handle_redeem_code_menu(update, user_id, context):
-    keyboard = [
-        [InlineKeyboardButton("🛒 Buy Redeem Code", callback_data="redeem_buy", style="primary")],
-        [InlineKeyboardButton("🎁 Use Gift Code", callback_data="redeem_use", style="success")],
-    ]
-    await update.message.reply_text(
-        "*REDEEM CODE*\n\n"
-        "🛒 *Buy A Redeem Code* — Purchase a code (min Rs.10) and receive it on your email.\n\n"
-        "*Use A Gift 🎁 Code* — Enter an existing code to add balance.",
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode="Markdown"
-    )
+    keyboard = [[InlineKeyboardButton("🛒 Buy Redeem Code", callback_data="redeem_buy", style="primary")], [InlineKeyboardButton("🎁 Use Gift Code", callback_data="redeem_use", style="success")]]
+    await update.message.reply_text("*REDEEM CODE*\n\n🛒 *Buy A Redeem Code* — Purchase a code (min Rs.10) and receive it on your email.\n\n*Use A Gift 🎁 Code* — Enter an existing code to add balance.", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
 
 async def handle_redeem_buy(update, user_id, context, text):
-    try:
-        amount = float(text)
+    try: amount = float(text)
     except:
         await update.message.reply_text("Please Send A Valid Amount (Minimum Rs.10).")
         return
-
     redeem_price = float(await get_setting("redeem_code_price", "10"))
     if amount < redeem_price:
         await update.message.reply_text(f"Minimum Redeem Code Amount Is Rs.{redeem_price:.0f}")
         return
-
-    async with turso_connect() as db:
-        row = await (await db.execute("SELECT balance FROM user_balance WHERE user_id=?", (user_id,))).fetchone()
-    balance = row[0] if row else 0.0
-
+    async with turso_connect() as db: canvas_row = await (await db.execute("SELECT balance FROM user_balance WHERE user_id=?", (user_id,))).fetchone()
+    balance = canvas_row[0] if canvas_row else 0.0
     if balance < amount:
         await update.message.reply_text(f"Insufficient Balance. Your Balance: Rs.{balance:.2f}")
         context.user_data['waiting_for'] = None
         return
-
     context.user_data['redeem_amount'] = amount
     context.user_data['waiting_for'] = 'redeem_email'
-    await update.message.reply_text(
-        "📧 *EMAIL ADDRESS*\n\nPlease send your email address to receive the redeem code:",
-        parse_mode="Markdown"
-    )
+    await update.message.reply_text("📧 *EMAIL ADDRESS*\n\nPlease send your email address to receive the redeem code:", parse_mode="Markdown")
 
 
 async def handle_redeem_finalize(update, user_id, context, mobile):
     amount = context.user_data.get('redeem_amount', 0)
     email = context.user_data.get('redeem_email', '')
-
     if not email or amount <= 0:
         await update.message.reply_text("⚠️ Something Went Wrong. Please Start Again.")
         context.user_data.clear()
         return
-
-    async with turso_connect() as db:
-        row = await (await db.execute("SELECT balance FROM user_balance WHERE user_id=?", (user_id,))).fetchone()
+    async with turso_connect() as db: row = await (await db.execute("SELECT balance FROM user_balance WHERE user_id=?", (user_id,))).fetchone()
     balance = row[0] if row else 0.0
     if balance < amount:
         await update.message.reply_text("❌ Insufficient Balance.")
         context.user_data.clear()
         return
-
     unique_code = f"REQ-{user_id}-{int(datetime.utcnow().timestamp())}"
     async with turso_connect() as db:
         await db.execute("UPDATE user_balance SET balance = balance - ? WHERE user_id=?", (amount, user_id))
-        await db.execute(
-            "INSERT INTO redeem_codes (code, amount, user_id, email, mobile, status) VALUES (?,?,?,?,?,'pending')",
-            (unique_code, amount, user_id, email, mobile)
-        )
+        await db.execute("INSERT INTO redeem_codes (code, amount, user_id, email, mobile, status) VALUES (?,?,?,?,?,'pending')", (unique_code, amount, user_id, email, mobile))
         await db.commit()
-
-    async with turso_connect() as db2:
-        id_row = await (await db2.execute("SELECT id FROM redeem_codes WHERE code=?", (unique_code,))).fetchone()
+    async with turso_connect() as db2: id_row = await (await db2.execute("SELECT id FROM redeem_codes WHERE code=?", (unique_code,))).fetchone()
     numeric_id = id_row[0] if id_row else "?"
-    req_id = unique_code
-
     context.user_data.clear()
-
     try:
-        admin_msg = (
-            f"🎟️ NEW REDEEM CODE REQUEST!\n\n"
-            f"RDM ID: `{numeric_id}`\n"
-            f"Request Code: `{req_id}`\n"
-            f"User ID: `{user_id}`\n"
-            f"Amount: `Rs.{amount:.2f}`\n"
-            f"Email: `{email}`\n"
-            f"Mobile: `{mobile}`\n\n"
-            f"Use *Approve RDM* button and send RDM ID: `{numeric_id}` to approve."
-        )
+        admin_msg = f"🎟️ NEW REDEEM CODE REQUEST!\n\nRDM ID: `{numeric_id}`\nRequest Code: `{unique_code}`\nUser ID: `{user_id}`\nAmount: `Rs.{amount:.2f}`\nEmail: `{email}`\nMobile: `{mobile}`\n\nUse *Approve RDM* button and send RDM ID: `{numeric_id}` to approve."
         await bot_app_global.bot.send_message(chat_id=ADMIN_ID, text=admin_msg, parse_mode="Markdown")
-    except Exception as e:
-        logger.error(f"Admin notify error: {e}")
-
-    await update.message.reply_text(
-        f"✅ *REDEEM CODE REQUEST SUBMITTED!*\n\n"
-        f"💰 Amount: Rs.{amount:.2f}\n"
-        f"📧 Email: {email}\n"
-        f"📱 Mobile: {mobile}\n\n"
-        f"⏳ Admin Will Send The Code To Your Email Shortly.",
-        parse_mode="Markdown"
-    )
+    except Exception as e: logger.error(f"Admin notify error: {e}")
+    await update.message.reply_text(f"✅ *REDEEM CODE REQUEST SUBMITTED!*\n\n💰 Amount: Rs.{amount:.2f}\n📧 Email: {email}\n📱 Mobile: {mobile}\n\n⏳ Admin Will Send The Code To Your Email Shortly.", parse_mode="Markdown")
 
 
 async def handle_redeem_use(update, user_id, code):
@@ -2029,11 +1755,7 @@ async def handle_redeem_use(update, user_id, code):
         await db.execute("UPDATE redeem_codes SET status='used' WHERE id=?", (row[0],))
         await db.execute("UPDATE user_balance SET balance = balance + ? WHERE user_id=?", (amount, user_id))
         await db.commit()
-    await update.message.reply_text(
-        f"🎉 Gift Code Applied!\n\n💰 ₹{amount:.2f} Added To Your Balance!",
-        parse_mode="Markdown"
-    )
-
+    await update.message.reply_text(f"🎉 Gift Code Applied!\n\n💰 ₹{amount:.2f} Added To Your Balance!", parse_mode="Markdown")
 
 # ===================== CALLBACK QUERY HANDLER =====================
 
@@ -2043,16 +1765,12 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     user_id = update.effective_user.id
 
-    if data == "check_join":
-        await check_join_callback(update, context)
-
-    # ---- ADMIN TOGGLE BUTTONS ----
+    if data == "check_join": await check_join_callback(update, context)
     elif data.startswith("tog_btn_"):
         key = data.replace("tog_", "")
         current_val = await get_setting(key, "1")
         new_val = "0" if current_val == "1" else "1"
         await set_setting(key, new_val)
-
         keyboard = [
             [InlineKeyboardButton("Balance: " + ("✅ SHOW" if await get_setting("btn_balance", "1") == "1" else "❌ HIDE"), callback_data="tog_btn_balance")],
             [InlineKeyboardButton("Refer & Earn: " + ("✅ SHOW" if await get_setting("btn_refer", "1") == "1" else "❌ HIDE"), callback_data="tog_btn_refer")],
@@ -2063,136 +1781,57 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("Redeem Code: " + ("✅ SHOW" if await get_setting("btn_redeem", "1") == "1" else "❌ HIDE"), callback_data="tog_btn_redeem")],
         ]
         await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(keyboard))
-        btn_name = key.replace('btn_', '').replace('_', ' ').title()
-        status_text = "Shown" if new_val == "1" else "Hidden"
-        await query.answer(f"{btn_name} Button is now {status_text}!", show_alert=True)
-
+        await query.answer(f"{key.replace('btn_','').replace('_',' ').title()} Button updated!", show_alert=True)
     elif data == "link_ultra":
         context.user_data['waiting_for'] = 'ultra_pay'
         await query.message.edit_text("💸 *LINK ULTRA PAY WALLET*\n\nSend your Ultra Pay Wallet number:", parse_mode="Markdown")
-        
     elif data == "link_vsv":
         context.user_data['waiting_for'] = 'vsv'
         await query.message.edit_text("💳 *LINK VSV WALLET*\n\nSend your VSV Wallet number (exactly 10 digits):", parse_mode="Markdown")
-
     elif data.startswith("refer_invites_"):
-        target_uid = int(data.split("_")[-1])
-        async with turso_connect() as db:
-            row = await (await db.execute("SELECT referral_count FROM user_balance WHERE user_id=?", (target_uid,))).fetchone()
-        count = row[0] if row else 0
-        await query.message.reply_text(
-            f"🚀 *MY INVITES*\n\n"
-            f"👥 *TOTAL VERIFIED REFERRALS:* {count}\n\n"
-            f"_Keep sharing your link to earn more!_",
-            parse_mode="Markdown"
-        )
-
-    elif data == "refer_leaderboard":
-        await handle_leaderboard(query)
-
+        async with turso_connect() as db: row = await (await db.execute("SELECT referral_count FROM user_balance WHERE user_id=?", (int(data.split("_")[-1]),))).fetchone()
+        await query.message.reply_text(f"🚀 *MY INVITES*\n\n👥 *TOTAL VERIFIED REFERRALS:* {row[0] if row else 0}\n\n_Keep sharing your link to earn more!_", parse_mode="Markdown")
+    elif data == "refer_leaderboard": await handle_leaderboard(query)
     elif data.startswith("refer_tracker_"):
-        target_uid = int(data.split("_")[-1])
-        async with turso_connect() as db:
-            row = await (await db.execute("SELECT referral_count FROM user_balance WHERE user_id=?", (target_uid,))).fetchone()
-        count = row[0] if row else 0
-        refer_reward = await get_setting("refer_reward", "5")
-        earned = count * float(refer_reward)
-        await query.message.reply_text(
-            f"👥 *REFER TRACKER*\n\n"
-            f"✅ *VERIFIED REFERRALS:* {count}\n"
-            f"💰 *TOTAL EARNED FROM REFERS:* RS.{earned:.2f}\n\n"
-            f"_Bonus is credited after each friend verifies their device._",
-            parse_mode="Markdown"
-        )
-
+        async with turso_connect() as db: row = await (await db.execute("SELECT referral_count FROM user_balance WHERE user_id=?", (int(data.split("_")[-1]),))).fetchone()
+        await query.message.reply_text(f"👥 *REFER TRACKER*\n\n✅ *VERIFIED REFERRALS:* {row[0] if row else 0}\n💰 *TOTAL EARNED:* RS.{(row[0] if row else 0)*float(await get_setting('refer_reward','5')):.2f}", parse_mode="Markdown")
     elif data.startswith("bonus_daily_"):
-        target_uid = user_id
-        async with turso_connect() as db:
-            row = await (await db.execute("SELECT balance, last_bonus_claim FROM user_balance WHERE user_id=?", (target_uid,))).fetchone()
-        balance = float(row[0]) if row and row[0] is not None else 0.0
-        last_bonus = row[1] if row else None
         now = datetime.utcnow().isoformat()
-
-        if last_bonus:
-            time_diff = (datetime.utcnow() - datetime.fromisoformat(last_bonus)).total_seconds()
-            if time_diff < 86400:
-                hours_left = (86400 - time_diff) / 3600
-                await query.message.reply_text(
-                    f"⏳ *DAILY BONUS*\n\nCome back in *{hours_left:.1f} hours* to claim your daily bonus!\n\n🎁 Claim every 24 hours.",
-                    parse_mode="Markdown"
-                )
+        async with turso_connect() as db: row = await (await db.execute("SELECT balance, last_bonus_claim FROM user_balance WHERE user_id=?", (user_id,))).fetchone()
+        if row and row[1]:
+            if (datetime.utcnow() - datetime.fromisoformat(row[1])).total_seconds() < 86400:
+                await query.message.reply_text(f"⏳ *DAILY BONUS*\n\nCome back in *{(86400 - (datetime.utcnow() - datetime.fromisoformat(row[1])).total_seconds()) / 3600:.1f} hours*!", parse_mode="Markdown")
                 return
-
-        daily_bonus_amount = float(await get_setting("daily_bonus", "0"))
-
-        if daily_bonus_amount <= 0:
-            await query.message.reply_text(
-                "⏳ *DAILY BONUS*\n\nDaily bonus has not been set by admin yet.\nPlease check back later! 🙏",
-                parse_mode="Markdown"
-            )
+        amount = float(await get_setting("daily_bonus", "0"))
+        if amount <= 0:
+            await query.message.reply_text("⏳ Admin has not set daily bonus yet.")
             return
-
         async with turso_connect() as db:
-            await db.execute(
-                "INSERT OR IGNORE INTO user_balance (user_id, balance) VALUES (?, 0.0)",
-                (target_uid,)
-            )
-            await db.execute(
-                "UPDATE user_balance SET balance = balance + ?, last_bonus_claim=? WHERE user_id=?",
-                (daily_bonus_amount, now, target_uid)
-            )
+            await db.execute("INSERT OR IGNORE INTO user_balance (user_id, balance) VALUES (?, 0.0)", (user_id,))
+            await db.execute("UPDATE user_balance SET balance = balance + ?, last_bonus_claim=? WHERE user_id=?", (amount, now, user_id))
             await db.commit()
-        bonus_str = f"{daily_bonus_amount:.2f}"
-        await query.message.reply_text(
-            f"🎁 Bonus Rs.{bonus_str} Claimed Successfully"
-        )
-
+        await query.message.reply_text(f"🎁 Bonus Rs.{amount:.2f} Claimed Successfully")
     elif data.startswith("bonus_gift_"):
         context.user_data['waiting_for'] = 'redeem_use'
-        await query.message.reply_text(
-            "🎁 *ENTER GIFT CODE*\n\nSend your gift code below:",
-            parse_mode="Markdown"
-        )
-
+        await query.message.reply_text("🎁 *ENTER GIFT CODE*\n\nSend your gift code below:", parse_mode="Markdown")
     elif data == "redeem_buy":
         context.user_data['waiting_for'] = 'redeem_buy_amount'
-        redeem_price = await get_setting("redeem_code_price", "10")
-        await query.message.reply_text(
-            f"🛒 *BUY REDEEM CODE*\n\nSend The Amount For The Redeem Code (Minimum Rs.{redeem_price}):",
-            parse_mode="Markdown"
-        )
+        await query.message.reply_text(f"🛒 *BUY REDEEM CODE*\n\nSend The Amount For The Redeem Code (Minimum Rs.{await get_setting('redeem_code_price','10')}):", parse_mode="Markdown")
     elif data == "redeem_use":
         context.user_data['waiting_for'] = 'redeem_use'
-        await query.message.reply_text(
-            "🎁 *USE Gift CODE*\n\nSend Your Gift Code:",
-            parse_mode="Markdown"
-        )
-        
+        await query.message.reply_text("🎁 *USE GIFT CODE*\n\nSend Your Gift Code:", parse_mode="Markdown")
     elif data.startswith("wd_ultra_"):
         context.user_data['withdraw_method'] = 'ultra'
         context.user_data['waiting_for'] = 'withdraw_amount'
-        min_withdrawal = await get_setting("min_withdrawal", "50")
-        await query.message.reply_text(
-            f"💸 *ULTRA PAY SELECTED*\n\nENTER YOUR AMOUNT YOU WANT TO WITHDRAW\n(EG. 10)\n\nMinimum: Rs.{min_withdrawal}",
-            parse_mode="Markdown"
-        )
-        
+        await query.message.reply_text(f"💸 *ULTRA PAY SELECTED*\n\nENTER AMOUNT (Min: Rs.{await get_setting('min_withdrawal','50')})", parse_mode="Markdown")
     elif data.startswith("wd_upi_"):
         context.user_data['withdraw_method'] = 'upi'
         context.user_data['waiting_for'] = 'withdraw_amount'
-        min_withdrawal = await get_setting("min_withdrawal", "50")
-        await query.message.reply_text(
-            f"🏦 *UPI SELECTED*\n\nENTER YOUR AMOUNT YOU WANT TO WITHDRAW\n(EG. 10)\n\nMinimum: Rs.{min_withdrawal}",
-            parse_mode="Markdown"
-        )
+        await query.message.reply_text(f"🏦 *UPI SELECTED*\n\nENTER AMOUNT (Min: Rs.{await get_setting('min_withdrawal','50')})", parse_mode="Markdown")
     elif data.startswith("wd_vsv_"):
         context.user_data['withdraw_method'] = 'vsv'
         context.user_data['waiting_for'] = 'withdraw_amount'
-        min_withdrawal = await get_setting("min_withdrawal", "50")
-        await query.message.reply_text(
-            f"💳 *VSV SELECTED*\n\nENTER YOUR AMOUNT YOU WANT TO WITHDRAW\n(EG. 10)\n\nMinimum: Rs.{min_withdrawal}",
-            parse_mode="Markdown"
-        )
+        await query.message.reply_text(f"💳 *VSV SELECTED*\n\nENTER AMOUNT (Min: Rs.{await get_setting('min_withdrawal','50')})", parse_mode="Markdown")
 
 # ===================== VALIDATION =====================
 
@@ -2200,20 +1839,14 @@ def validate_telegram_init_data(init_data: str, bot_token: str):
     try:
         params = {}
         for item in init_data.split("&"):
-            if "=" in item:
-                k, v = item.split("=", 1)
-                params[k] = v
+            if "=" in item: k, v = item.split("=", 1); params[k] = v
         received_hash = params.pop("hash", "")
         data_check_string = "\n".join(f"{k}={unquote(v)}" for k, v in sorted(params.items()))
         secret_key = hmac.new(b"WebAppData", bot_token.encode(), hashlib.sha256).digest()
         computed_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
-        if hmac.compare_digest(computed_hash, received_hash):
-            return json.loads(unquote(params.get("user", "{}")))
+        if hmac.compare_digest(computed_hash, received_hash): return json.loads(unquote(params.get("user", "{}")))
         return None
-    except Exception as e:
-        logger.error(f"initData validation error: {e}")
-        return None
-
+    except Exception as e: logger.error(f"initData error: {e}"); return None
 
 # ===================== FASTAPI =====================
 
@@ -2224,195 +1857,80 @@ async def lifespan(app: FastAPI):
     await init_db()
     await run_bot()
     yield
-    if _http_client and not _http_client.is_closed:
-        await _http_client.aclose()
+    if _http_client and not _http_client.is_closed: await _http_client.aclose()
 
 app = FastAPI(lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
-
 STATIC_DIR = Path(__file__).parent / "static"
 app.mount("/bot/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
-
-@app.get("/")
-async def root_route():
-    return {"status": "ok", "message": "Bot is live and running!"}
-
-# ===================== BOT VERIFY ENDPOINT =====================
-
-class VerifyRequest(BaseModel):
-    init_data: str
-    device_id: str
-    persistent_id: str = ""
-
 
 @app.get("/bot/verify")
 async def serve_verify_page():
     html_path = STATIC_DIR / "verify.html"
-    content = html_path.read_text(encoding="utf-8")
-    headers = {
-        "X-Frame-Options": "ALLOWALL",
-        "Content-Security-Policy": "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:;",
-        "Access-Control-Allow-Origin": "*",
-        "Cache-Control": "no-cache",
-    }
-    return Response(content=content, media_type="text/html", headers=headers)
+    return Response(content=html_path.read_text(encoding="utf-8"), media_type="text/html", headers={"X-Frame-Options": "ALLOWALL", "Content-Security-Policy": "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:;", "Access-Control-Allow-Origin": "*", "Cache-Control": "no-cache"})
 
 
+# FIXED: Is logical core endpoint ke andar dono filters me reply_markup ko force load par lagaya hai!
 @app.post("/bot/api/verify-device")
 async def verify_device(payload: VerifyRequest, request: Request):
     user_data = validate_telegram_init_data(payload.init_data, BOT_TOKEN)
-    if not user_data:
-        raise HTTPException(status_code=403, detail="Invalid Telegram session")
+    if not user_data: raise HTTPException(status_code=403, detail="Invalid session")
     user_id = user_data.get("id")
-    if not user_id:
-        raise HTTPException(status_code=400, detail="User ID missing")
     device_id = payload.device_id
     persistent_id = payload.persistent_id or ""
 
-    client_ip = request.headers.get("X-Forwarded-For", "")
-    if client_ip:
-        client_ip = client_ip.split(",")[0].strip()
-    else:
-        client_ip = request.headers.get("X-Real-IP", "")
-    if not client_ip and request.client:
-        client_ip = request.client.host or ""
+    client_ip = request.headers.get("X-Forwarded-For", "").split(",")[0].strip() or request.headers.get("X-Real-IP", "") or (request.client.host if request.client else "")
 
+    is_verified_by_device = True
     async with turso_connect() as db:
-        # Check all existing footprints
         row = await (await db.execute("SELECT user_id FROM device_registry WHERE device_id=?", (device_id,))).fetchone()
-        p_row = await (await db.execute("SELECT user_id FROM persistent_device_registry WHERE persistent_id=?", (persistent_id,))).fetchone() if persistent_id else None
-        ip_row = await (await db.execute("SELECT user_id FROM ip_registry WHERE ip_address=?", (client_ip,))).fetchone() if client_ip else None
+        if row and row[0] != user_id: is_verified_by_device = False
+        if persistent_id and is_verified_by_device:
+            p_row = await (await db.execute("SELECT user_id FROM persistent_device_registry WHERE persistent_id=?", (persistent_id,))).fetchone()
+            if p_row and p_row[0] != user_id: is_verified_by_device = False
+        if client_ip and is_verified_by_device:
+            ip_row = await (await db.execute("SELECT user_id FROM ip_registry WHERE ip_address=?", (client_ip,))).fetchone()
+            if ip_row and ip_row[0] != user_id: is_verified_by_device = False
 
-        # Check for multiple IDs on same device
-        is_duplicate = False
-        if row and row[0] != user_id:
-            is_duplicate = True
-        elif p_row and p_row[0] != user_id:
-            is_duplicate = True
-        elif ip_row and ip_row[0] != user_id:
-            is_duplicate = True
-
-        if is_duplicate:
-            # User is using a duplicate device/IP.
-            # 1. Update verified status to 2 (Allowed, but marked as Duplicate). 
-            await db.execute("UPDATE users SET is_verified=2 WHERE user_id=?", (user_id,))
-            # 2. DELETE their pending referral, so the referrer gets NOTHING!
-            await db.execute("DELETE FROM bot_settings WHERE key=?", (f"pending_referrer_{user_id}",))
-            
-            # Ensure they have a balance table row to normally use the bot
-            existing_balance = await (await db.execute("SELECT balance FROM user_balance WHERE user_id=?", (user_id,))).fetchone()
-            if not existing_balance:
-                await db.execute("INSERT OR IGNORE INTO user_balance (user_id, balance) VALUES (?,?)", (user_id, 0.0))
-            
-            await db.commit()
-            return {"status": "blocked", "message": "Device already registered."}
-
-        # --- Normal Flow For Geniune Unique Verification ---
-        if not row:
-            await db.execute("INSERT OR REPLACE INTO device_registry (device_id, user_id) VALUES (?, ?)", (device_id, user_id))
-        if persistent_id and not (p_row if persistent_id else None):
-            await db.execute("INSERT OR REPLACE INTO persistent_device_registry (persistent_id, user_id) VALUES (?, ?)", (persistent_id, user_id))
-        if client_ip:
-            await db.execute("INSERT OR REPLACE INTO ip_registry (ip_address, user_id) VALUES (?, ?)", (client_ip, user_id))
+        if is_verified_by_device and not row: await db.execute("INSERT OR REPLACE INTO device_registry (device_id, user_id) VALUES (?, ?)", (device_id, user_id))
+        if persistent_id and is_verified_by_device and not (p_row if persistent_id else None): await db.execute("INSERT OR REPLACE INTO persistent_device_registry (persistent_id, user_id) VALUES (?, ?)", (persistent_id, user_id))
+        if client_ip and is_verified_by_device: await db.execute("INSERT OR REPLACE INTO ip_registry (ip_address, user_id) VALUES (?, ?)", (client_ip, user_id))
+        
         now = datetime.utcnow().isoformat()
-
         already_verified = await (await db.execute("SELECT is_verified FROM users WHERE user_id=?", (user_id,))).fetchone()
         was_verified = int(already_verified[0]) if already_verified and already_verified[0] is not None else 0
 
-        await db.execute(
-            """INSERT INTO users (user_id, username, first_name, is_verified, device_id, verified_at)
-               VALUES (?, ?, ?, 1, ?, ?)
-               ON CONFLICT(user_id) DO UPDATE SET is_verified=1, device_id=excluded.device_id, verified_at=excluded.verified_at""",
-            (user_id, user_data.get("username"), user_data.get("first_name"), device_id, now)
-        )
-
+        final_status = 1 if is_verified_by_device else 0
+        await db.execute("""INSERT INTO users (user_id, username, first_name, is_verified, device_id, verified_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET is_verified=excluded.is_verified, device_id=excluded.device_id, verified_at=excluded.verified_at""", (user_id, user_data.get("username"), user_data.get("first_name"), final_status, device_id, now))
+        
         existing_balance = await (await db.execute("SELECT balance FROM user_balance WHERE user_id=?", (user_id,))).fetchone()
-
-        if not existing_balance:
-            await db.execute("INSERT OR IGNORE INTO user_balance (user_id, balance) VALUES (?,?)", (user_id, 0.0))
-            await db.commit()
-
-        referrer_to_notify = None
-        referrer_reward_amount = 0.0
-
+        if not existing_balance: await db.execute("INSERT OR IGNORE INTO user_balance (user_id, balance) VALUES (?,?)", (user_id, 0.0))
         await db.commit()
 
-    if was_verified == 0:
-        async with turso_connect() as db2:
-            referrer_row = await (await db2.execute(
-                "SELECT value FROM bot_settings WHERE key=?",
-                (f"pending_referrer_{user_id}",)
-            )).fetchone()
-
-        if referrer_row:
-            referrer_id_val = int(referrer_row[0])
-            refer_reward = float(await get_setting("refer_reward", "5"))
-            async with turso_connect() as db3:
-                await db3.execute(
-                    "INSERT OR IGNORE INTO user_balance (user_id, balance) VALUES (?, 0.0)",
-                    (referrer_id_val,)
-                )
-                await db3.execute(
-                    "UPDATE user_balance SET balance = balance + ?, referral_count = referral_count + 1 WHERE user_id=?",
-                    (refer_reward, referrer_id_val)
-                )
-                await db3.execute("DELETE FROM bot_settings WHERE key=?", (f"pending_referrer_{user_id}",))
-                await db3.commit()
-            referrer_to_notify = referrer_id_val
-            referrer_reward_amount = refer_reward
-
-
-    if referrer_to_notify:
-        try:
-            reward_str = f"{referrer_reward_amount:.2f}".replace(".", "\\.")
-            await bot_app_global.bot.send_message(
-                chat_id=referrer_to_notify,
-                text=(
-                    f"🎉 [User {user_id}](tg://user?id={user_id}) got invited by your URL\n"
-                    f"🎁 Rs\\.{reward_str} added to your balance"
-                ),
-                parse_mode="MarkdownV2"
-            )
-        except Exception as e:
-            logger.error(f"Referrer notify error: {e}")
-
-    first_name = user_data.get("first_name", "User")
-    safe_first_name = html.escape(str(first_name))
+    if was_verified == 0: await process_referral_and_verify(user_id, bot_app_global.bot, is_verified_by_device=is_verified_by_device)
     
     try:
         keyboard = await get_user_keyboard_async(user_id)
-        await bot_app_global.bot.send_message(
-            chat_id=user_id,
-            text="✅ *Device Verified Successfully!*",
-            parse_mode="Markdown"
-        )
-        await bot_app_global.bot.send_message(
-            chat_id=user_id,
-            text=f"😍 Welcome, <b>{safe_first_name}</b>!\n\n💸 Earn Money • Refer Friends • Withdraw Instantly\n\n👇 Use button below to get started",
-            parse_mode="HTML",
-            reply_markup=keyboard
-        )
-    except Exception as e:
-        logger.error(f"Failed to send main menu after verification: {e}")
+        # BUG FIXED HERE: Dono type ke text pushes me explicit layout keyboard inject kiya hai taaki window close hote hi keyboard automatic dikhe!
+        if is_verified_by_device: 
+            await bot_app_global.bot.send_message(chat_id=user_id, text="✅ *Device Verified Successfully!*", parse_mode="Markdown", reply_markup=keyboard)
+        else: 
+            await bot_app_global.bot.send_message(chat_id=user_id, text="❌ *DEVICE VERIFICATION FAILED*\n\nMultiple IDs detected on this device. You can still use the bot features normally.", parse_mode="Markdown", reply_markup=keyboard)
+        
+        await bot_app_global.bot.send_message(chat_id=user_id, text=f"😍 Welcome, <b>{html.escape(str(user_data.get('first_name','User')))}</b>!\n\n💸 Earn Money • Refer Friends • Withdraw Instantly\n\n👇 Use button below to get started", parse_mode="HTML", reply_markup=keyboard)
+    except Exception as e: logger.error(f"Menu error: {e}")
 
-    return {"status": "verified", "user": {"id": user_id, "first_name": user_data.get("first_name")}}
-
+    return {"status": "verified"} if is_verified_by_device else {"status": "failed"}
 
 @app.api_route("/bot/healthz", methods=["GET", "HEAD"])
-async def health():
-    return {"status": "ok"}
-
+async def health(): return {"status": "ok"}
 
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
-    global bot_app_global
-    if bot_app_global is None:
-        raise HTTPException(status_code=503, detail="Bot not ready")
-    data = await request.json()
-    update = Update.de_json(data, bot_app_global.bot)
+    if bot_app_global is None: raise HTTPException(status_code=503, detail="Bot not ready")
+    update = Update.de_json(await request.json(), bot_app_global.bot)
     await bot_app_global.process_update(update)
     return {"ok": True}
-
 
 # ===================== BOT MAIN =====================
 
@@ -2430,15 +1948,10 @@ async def run_bot():
     await bot_app.start()
     await bot_app.bot.set_webhook(url=WEBHOOK_URL)
     bot_app_global = bot_app
-    logger.info(f"Webhook set: {WEBHOOK_URL}")
     return bot_app
 
-
 async def main():
-    config = uvicorn.Config(app, host="0.0.0.0", port=PORT, log_level="info")
-    server = uvicorn.Server(config)
-    await server.serve()
-
+    await uvicorn.Server(uvicorn.Config(app, host="0.0.0.0", port=PORT, log_level="info")).serve()
 
 if __name__ == "__main__":
     asyncio.run(main())
