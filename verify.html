@@ -1,0 +1,610 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Device Verification</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #0a0e1a;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    color: #ffffff;
+    overflow: hidden;
+  }
+
+  /* Header */
+  .header {
+    width: 100%;
+    background: rgba(255,255,255,0.04);
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+    padding: 14px 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .avatar {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #1a6dff, #00c2ff);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    font-weight: 700;
+    color: #fff;
+    flex-shrink: 0;
+  }
+  .user-info { flex: 1; }
+  .user-name { font-size: 15px; font-weight: 600; color: #fff; }
+  .user-id { font-size: 12px; color: rgba(255,255,255,0.45); margin-top: 2px; }
+  .status-badge {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 20px;
+    letter-spacing: 0.5px;
+  }
+  .status-scanning {
+    background: rgba(26, 109, 255, 0.18);
+    color: #4a9eff;
+    border: 1px solid rgba(74,158,255,0.3);
+  }
+  .status-active {
+    background: rgba(0, 220, 130, 0.15);
+    color: #00dc82;
+    border: 1px solid rgba(0,220,130,0.3);
+  }
+  .status-blocked {
+    background: rgba(255, 60, 60, 0.15);
+    color: #ff5252;
+    border: 1px solid rgba(255,82,82,0.3);
+  }
+
+  /* Main Content */
+  .content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 30px 24px;
+    width: 100%;
+  }
+
+  .card {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 24px;
+    padding: 44px 32px 40px;
+    width: 100%;
+    max-width: 360px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+  }
+
+  /* Fingerprint / Checkmark Icon */
+  .icon-wrap {
+    position: relative;
+    width: 130px;
+    height: 130px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 28px;
+  }
+
+  .ring {
+    position: absolute;
+    border-radius: 50%;
+    border: 2px solid;
+    opacity: 0;
+  }
+  .ring-1 { width: 100%; height: 100%; }
+  .ring-2 { width: 80%; height: 80%; }
+
+  /* Scanning state rings */
+  .scanning .ring-1 {
+    border-color: rgba(26,109,255,0.3);
+    animation: pulse 2s ease-in-out infinite;
+  }
+  .scanning .ring-2 {
+    border-color: rgba(26,109,255,0.5);
+    animation: pulse 2s ease-in-out infinite 0.4s;
+  }
+
+  /* Success state rings */
+  .success .ring-1 {
+    border-color: rgba(0,220,130,0.3);
+    animation: pulse-green 2s ease-in-out infinite;
+  }
+  .success .ring-2 {
+    border-color: rgba(0,220,130,0.5);
+    animation: pulse-green 2s ease-in-out infinite 0.4s;
+  }
+
+  .icon-inner {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    background: rgba(26,109,255,0.1);
+    border: 2px solid rgba(26,109,255,0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    z-index: 1;
+    transition: all 0.5s ease;
+  }
+  .icon-inner.green {
+    background: rgba(0,220,130,0.1);
+    border-color: rgba(0,220,130,0.6);
+  }
+  .icon-inner.red {
+    background: rgba(255,82,82,0.1);
+    border-color: rgba(255,82,82,0.6);
+  }
+  .icon-inner svg { width: 38px; height: 38px; }
+
+  @keyframes pulse {
+    0%,100% { opacity: 0; transform: scale(0.92); }
+    50% { opacity: 1; transform: scale(1); }
+  }
+  @keyframes pulse-green {
+    0%,100% { opacity: 0; transform: scale(0.92); }
+    50% { opacity: 1; transform: scale(1); }
+  }
+
+  /* Title */
+  .title {
+    font-size: 22px;
+    font-weight: 700;
+    color: #fff;
+    text-align: center;
+    margin-bottom: 10px;
+  }
+  .title.green { color: #00dc82; }
+  .title.red { color: #ff5252; }
+
+  .subtitle {
+    font-size: 13.5px;
+    color: rgba(255,255,255,0.45);
+    text-align: center;
+    line-height: 1.55;
+    margin-bottom: 32px;
+  }
+
+  /* Progress Bar */
+  .progress-wrap {
+    width: 100%;
+  }
+  .progress-labels {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .progress-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.8px;
+    color: rgba(255,255,255,0.4);
+  }
+  .progress-pct {
+    font-size: 11px;
+    font-weight: 700;
+    color: #4a9eff;
+  }
+  .progress-bar-bg {
+    width: 100%;
+    height: 4px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .progress-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #1a6dff, #00c2ff);
+    border-radius: 4px;
+    width: 0%;
+    transition: width 0.3s ease;
+  }
+
+  /* Continue Button */
+  .btn-continue {
+    width: 100%;
+    padding: 17px;
+    border-radius: 14px;
+    background: linear-gradient(135deg, #00dc82, #00b86a);
+    border: none;
+    color: #0a0e1a;
+    font-size: 15px;
+    font-weight: 800;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    cursor: pointer;
+    margin-top: 4px;
+    transition: opacity 0.2s, transform 0.1s;
+  }
+  .btn-continue:active { opacity: 0.85; transform: scale(0.98); }
+
+  /* Blocked message */
+  .blocked-info {
+    background: rgba(255,82,82,0.08);
+    border: 1px solid rgba(255,82,82,0.2);
+    border-radius: 12px;
+    padding: 14px 16px;
+    font-size: 13px;
+    color: rgba(255,255,255,0.55);
+    text-align: center;
+    line-height: 1.5;
+  }
+
+  /* Scanning label shimmer */
+  .scanning-text {
+    font-size: 12px;
+    font-weight: 600;
+    color: #4a9eff;
+    letter-spacing: 0.8px;
+    margin-bottom: 6px;
+    animation: blink 1.5s ease-in-out infinite;
+  }
+  @keyframes blink {
+    0%,100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div class="avatar" id="avatarEl">?</div>
+  <div class="user-info">
+    <div class="user-name" id="nameEl">Loading...</div>
+    <div class="user-id" id="idEl">ID: —</div>
+  </div>
+  <div class="status-badge status-scanning" id="statusBadge">● SCANNING</div>
+</div>
+
+<!-- Main Card -->
+<div class="content">
+  <div class="card">
+
+    <!-- Icon -->
+    <div class="icon-wrap scanning" id="iconWrap">
+      <div class="ring ring-1"></div>
+      <div class="ring ring-2"></div>
+      <div class="icon-inner" id="iconInner">
+        <!-- Fingerprint SVG -->
+        <svg id="iconSvg" viewBox="0 0 38 38" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <g stroke="#4a9eff" stroke-width="1.8" stroke-linecap="round">
+            <path d="M14.5 10.5C14.5 10.5 19 8 23.5 10.5C28 13 28 19 28 19" opacity="0.5"/>
+            <path d="M10.5 14C10.5 14 9 16.5 9 19C9 21.5 10 24 10 24"/>
+            <path d="M19 11.5C19 11.5 22 12.5 23.5 15.5C25 18.5 24 22 22 24.5"/>
+            <path d="M14 14.5C14 14.5 12.5 16.5 13 19.5C13.5 22.5 15.5 25.5 17 27.5"/>
+            <path d="M17 13C17 13 15.5 15 16 18.5C16.5 22 18 24.5 19 26.5C20 28.5 20 29 20 29"/>
+            <path d="M20.5 13.5C20.5 13.5 22 15.5 21.5 19C21 22.5 19.5 25 19 27"/>
+            <path d="M13 10C13 10 10 12 9.5 16"/>
+            <circle cx="19" cy="19" r="3" stroke-width="1.5" opacity="0.35"/>
+          </g>
+        </svg>
+      </div>
+    </div>
+
+    <!-- Text -->
+    <div class="title" id="titleEl">Verifying Device</div>
+    <div class="subtitle" id="subtitleEl">Establishing secure handshake...</div>
+
+    <!-- Progress (shown during scan) -->
+    <div class="progress-wrap" id="progressWrap">
+      <div class="progress-labels">
+        <div class="scanning-text" id="scanLabel">ANALYSIS IN PROGRESS</div>
+        <div class="progress-pct" id="pctEl">0%</div>
+      </div>
+      <div class="progress-bar-bg">
+        <div class="progress-bar-fill" id="progressFill"></div>
+      </div>
+    </div>
+
+    <!-- Continue Button (hidden until verified) -->
+    <button class="btn-continue" id="continueBtn" style="display:none" onclick="continueToBot()">
+      CONTINUE TO BOT
+    </button>
+
+    <!-- Blocked Info (hidden until blocked) -->
+    <div class="blocked-info" id="blockedInfo" style="display:none">
+      This device is already registered with another Telegram account. Each device can only be linked to one account.
+    </div>
+
+  </div>
+</div>
+
+<script>
+  // Init Telegram WebApp
+  const tg = window.Telegram?.WebApp;
+  if (tg) {
+    tg.ready();
+    tg.expand();
+    tg.setHeaderColor('#0a0e1a');
+    tg.setBackgroundColor('#0a0e1a');
+  }
+
+  // Show user info
+  const user = tg?.initDataUnsafe?.user || {};
+  const name = user.first_name || 'User';
+  const userId = user.id || '—';
+  document.getElementById('nameEl').textContent = name;
+  document.getElementById('idEl').textContent = 'ID: ' + userId;
+  document.getElementById('avatarEl').textContent = name.charAt(0).toUpperCase();
+
+  // Persistent device ID using localStorage
+  function getPersistentDeviceId() {
+    try {
+      let pid = localStorage.getItem('_tg_dev_pid');
+      if (!pid) {
+        // Generate once and store permanently
+        const arr = new Uint8Array(16);
+        crypto.getRandomValues(arr);
+        pid = Array.from(arr).map(b => b.toString(16).padStart(2,'0')).join('');
+        localStorage.setItem('_tg_dev_pid', pid);
+      }
+      return pid;
+    } catch(_) {
+      return 'ls-blocked';
+    }
+  }
+
+  // Device fingerprinting
+  async function getDeviceFingerprint() {
+    const signals = [];
+
+    // Persistent ID - same device pe hamesha same rahega
+    signals.push(getPersistentDeviceId());
+
+    signals.push(navigator.userAgent || '');
+    signals.push(navigator.language || '');
+    signals.push(navigator.platform || '');
+    signals.push(String(screen.width) + 'x' + String(screen.height));
+    signals.push(String(screen.colorDepth));
+    signals.push(String(navigator.hardwareConcurrency || 0));
+    signals.push(String(navigator.deviceMemory || 0));
+    signals.push(String(navigator.maxTouchPoints || 0));
+    signals.push(Intl.DateTimeFormat().resolvedOptions().timeZone || '');
+
+    // Canvas fingerprint
+    try {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      canvas.width = 200;
+      canvas.height = 40;
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillStyle = '#f60';
+      ctx.fillRect(125, 1, 62, 20);
+      ctx.fillStyle = '#069';
+      ctx.font = '14px Arial';
+      ctx.fillText('DeviceCheck!', 2, 15);
+      ctx.fillStyle = 'rgba(102,204,0,0.7)';
+      ctx.font = '14px Georgia';
+      ctx.fillText('DeviceCheck!', 4, 17);
+      signals.push(canvas.toDataURL());
+    } catch (_) {
+      signals.push('canvas-blocked');
+    }
+
+    // WebGL renderer
+    try {
+      const gl = document.createElement('canvas').getContext('webgl');
+      if (gl) {
+        const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+        if (dbg) {
+          signals.push(gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL));
+          signals.push(gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL));
+        }
+      }
+    } catch (_) {
+      signals.push('webgl-blocked');
+    }
+
+    // Audio context fingerprint
+    try {
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const oscillator = audioCtx.createOscillator();
+      const analyser = audioCtx.createAnalyser();
+      const gain = audioCtx.createGain();
+      oscillator.connect(analyser);
+      analyser.connect(gain);
+      gain.connect(audioCtx.destination);
+      oscillator.type = 'triangle';
+      oscillator.frequency.value = 10000;
+      gain.gain.value = 0;
+      oscillator.start(0);
+      const buf = new Float32Array(analyser.frequencyBinCount);
+      analyser.getFloatFrequencyData(buf);
+      oscillator.stop();
+      audioCtx.close();
+      signals.push(String(buf[0]));
+    } catch (_) {
+      signals.push('audio-blocked');
+    }
+
+    // Installed fonts probe
+    const testFonts = ['Arial', 'Helvetica', 'Times New Roman', 'Courier New', 'Georgia'];
+    const fontCanvas = document.createElement('canvas');
+    const fctx = fontCanvas.getContext('2d');
+    fontCanvas.width = 100;
+    fontCanvas.height = 30;
+    const fontStr = testFonts.map(f => {
+      fctx.font = `14px '${f}', monospace`;
+      return f + ':' + fctx.measureText('mmmmmmmmm').width.toFixed(2);
+    }).join(',');
+    signals.push(fontStr);
+
+    // Hash all signals using SubtleCrypto
+    const raw = signals.join('|!|');
+    try {
+      const encoded = new TextEncoder().encode(raw);
+      const hashBuf = await crypto.subtle.digest('SHA-256', encoded);
+      const hashArr = Array.from(new Uint8Array(hashBuf));
+      return hashArr.map(b => b.toString(16).padStart(2, '0')).join('');
+    } catch (_) {
+      // Fallback simple hash
+      let h = 0;
+      for (let i = 0; i < raw.length; i++) {
+        h = (Math.imul(31, h) + raw.charCodeAt(i)) | 0;
+      }
+      return Math.abs(h).toString(16).padStart(8, '0');
+    }
+  }
+
+  // Animate progress bar
+  function animateProgress(target, duration, onDone) {
+    const fill = document.getElementById('progressFill');
+    const pct = document.getElementById('pctEl');
+    const label = document.getElementById('scanLabel');
+    let current = parseInt(fill.style.width) || 0;
+    const start = performance.now();
+
+    const messages = [
+      [0, 'ANALYSIS IN PROGRESS'],
+      [40, 'COLLECTING SIGNALS'],
+      [70, 'ESTABLISHING HANDSHAKE'],
+      [90, 'FINALIZING'],
+    ];
+
+    function step(now) {
+      const elapsed = now - start;
+      const prog = Math.min(elapsed / duration, 1);
+      current = Math.round(prog * (target - (parseInt(fill.style.width)||0)) + (parseInt(fill.style.width)||0));
+      fill.style.width = current + '%';
+      pct.textContent = current + '%';
+
+      const msg = messages.filter(m => m[0] <= current).pop();
+      if (msg) label.textContent = msg[1];
+
+      if (prog < 1) {
+        requestAnimationFrame(step);
+      } else {
+        if (onDone) onDone();
+      }
+    }
+    requestAnimationFrame(step);
+  }
+
+  // Show verified state
+  function showVerified() {
+    document.getElementById('iconWrap').className = 'icon-wrap success';
+    document.getElementById('iconInner').className = 'icon-inner green';
+    document.getElementById('iconSvg').innerHTML = `
+      <circle cx="19" cy="19" r="14" stroke="#00dc82" stroke-width="1.8" fill="none"/>
+      <polyline points="12,19 17,24 26,13" stroke="#00dc82" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    `;
+    document.getElementById('titleEl').className = 'title green';
+    document.getElementById('titleEl').textContent = 'Verified Successfully';
+    document.getElementById('subtitleEl').textContent = "You're verified successfully, you can use our bot now.";
+    document.getElementById('progressWrap').style.display = 'none';
+    document.getElementById('continueBtn').style.display = 'block';
+    document.getElementById('statusBadge').className = 'status-badge status-active';
+    document.getElementById('statusBadge').textContent = '● ACTIVE';
+  }
+
+  // Show blocked state
+  function showBlocked() {
+    document.getElementById('iconWrap').className = 'icon-wrap';
+    document.getElementById('iconInner').className = 'icon-inner red';
+    document.getElementById('iconSvg').innerHTML = `
+      <circle cx="19" cy="19" r="14" stroke="#ff5252" stroke-width="1.8" fill="none"/>
+      <line x1="13" y1="13" x2="25" y2="25" stroke="#ff5252" stroke-width="2.5" stroke-linecap="round"/>
+      <line x1="25" y1="13" x2="13" y2="25" stroke="#ff5252" stroke-width="2.5" stroke-linecap="round"/>
+    `;
+    document.getElementById('titleEl').className = 'title red';
+    document.getElementById('titleEl').textContent = 'Verification Failed';
+    document.getElementById('subtitleEl').textContent = 'Device already linked to another account.';
+    document.getElementById('progressWrap').style.display = 'none';
+    document.getElementById('blockedInfo').style.display = 'block';
+    document.getElementById('statusBadge').className = 'status-badge status-blocked';
+    document.getElementById('statusBadge').textContent = '● BLOCKED';
+  }
+
+  // ✅ UPDATED: Continue button - Option 2
+  // Pehle bot pe switchInlineQuery bhejta hai, phir WebApp band karta hai
+  function continueToBot() {
+    if (tg) {
+      try {
+        // Bot ko verified status bhejo inline query ke through
+        tg.switchInlineQuery('verified', ['bots']);
+      } catch (e) {
+        // Agar switchInlineQuery kaam na kare toh seedha close karo
+        console.log('switchInlineQuery failed, closing directly:', e);
+      }
+      // WebApp band karo - user bot chat pe wapas aayega
+      setTimeout(() => {
+        tg.close();
+      }, 300);
+    } else {
+      // Browser mein test ke liye
+      alert('Bot verified! (Telegram context nahi mila)');
+    }
+  }
+
+  // Main verification flow
+  async function startVerification() {
+    const initData = tg?.initData || '';
+
+    // Animate to 40%
+    animateProgress(40, 1200, async () => {
+      // Collect fingerprint
+      const deviceId = await getDeviceFingerprint();
+
+      // Animate to 80%
+      animateProgress(80, 800, async () => {
+        // Call backend
+        try {
+          const persistentId = getPersistentDeviceId();
+          const response = await fetch('/bot/api/verify-device', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ init_data: initData, device_id: deviceId, persistent_id: persistentId }),
+          });
+
+          const data = await response.json();
+
+          // Animate to 100% then show result
+          animateProgress(100, 500, () => {
+            setTimeout(() => {
+              if (data.status === 'verified') {
+                showVerified();
+              } else if (data.status === 'blocked') {
+                showBlocked();
+              } else {
+                showBlocked();
+              }
+            }, 300);
+          });
+
+        } catch (err) {
+          // Network error
+          animateProgress(100, 400, () => {
+            setTimeout(() => showBlocked(), 300);
+          });
+        }
+      });
+    });
+  }
+
+  // Start on load
+  window.addEventListener('DOMContentLoaded', () => {
+    setTimeout(startVerification, 400);
+  });
+</script>
+</body>
+  </html>
