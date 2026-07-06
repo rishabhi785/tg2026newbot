@@ -482,7 +482,7 @@ async def process_referral_and_verify(user_id: int, bot, is_verified_by_device=T
                 "UPDATE user_balance SET balance = balance + ?, referral_count = referral_count + 1 WHERE user_id=?",
                 (refer_reward, referrer_id_val)
             )
-            await db3.execute("DELETE FROM bot_settings WHERE key=?", (f"pending_referrer_{user_id}",))
+            await db3.execute("DELETE FROM d_bot_settings WHERE key=?", (f"pending_referrer_{user_id}",))
             await db3.commit()
 
         try:
@@ -874,7 +874,7 @@ async def handle_admin_action_input(update: Update, context: ContextTypes.DEFAUL
     elif action == 'add_private_channel':
         parts = text.split("|")
         if len(parts) < 3:
-            await update.message.reply_text("⚠️ Wrong format. Send:\nChannelName|-1001234567890|https://t.me/+invitelink\n\nChatID @userinfobot se milega.")
+            await update.message.reply_text("⚠️ Wrong format. Send:\nChannelName|-1001234567890|https://t.me/+invitelink`\n\n📌 ChatID @userinfobot se pata karo:\n1. Channel me koi message bhejo\n2. Wo message @userinfobot ko forward karo\n3. Forwarded chat ID copy karo", parse_mode="Markdown")
             return
         name = parts[0].strip()
         chat_id_str = parts[1].strip()
@@ -901,7 +901,7 @@ async def handle_admin_action_input(update: Update, context: ContextTypes.DEFAUL
     elif action == 'add_link_only':
         parts = text.split("|")
         if len(parts) < 3:
-            await update.message.reply_text("⚠️ Wrong format. Send:\nName|dummy|https://koi-bhi-link.com")
+            await update.message.reply_text("⚠️ Wrong format. Send:\nName|dummy|https://koi-bhi-link.com`\n\n📌 Is type me bot koi bhi verify nahi karega — sirf link show hoga user ko.", parse_mode="Markdown")
             return
         name = parts[0].strip()
         username = parts[1].strip().replace("@", "")
@@ -1036,7 +1036,7 @@ async def handle_admin_action_input(update: Update, context: ContextTypes.DEFAUL
         try:
             req_id = int(text)
             async with turso_connect() as db:
-                req = await (await db.execute("SELECT user_id, amount, vsv_wallet, upi_id, method FROM withdrawal_requests WHERE id=? AND status='pending'", (req_id,))).fetchone()
+                req = await (await db.execute("SELECT user_id, amount, vsv_wallet, upi_id, method FROM withdrawal_requests WHERE id=? AND status='pending'")),fetchone()
                 if not req:
                     await update.message.reply_text("⚠️ Request Not Found Or Already Processed.")
                     context.user_data['admin_action'] = None
@@ -1203,7 +1203,7 @@ async def handle_admin_action_input(update: Update, context: ContextTypes.DEFAUL
         try:
             req_id = int(text)
             async with turso_connect() as db:
-                req = await (await db.execute("SELECT user_id, amount FROM withdrawal_requests WHERE id=? AND status='pending'", (req_id,))).fetchone()
+                req = await (await db.execute("SELECT user_id, amount FROM withdrawal_requests WHERE id=? AND status='pending'")).fetchone()
                 if not req:
                     await update.message.reply_text("⚠️ Request Not Found.")
                     context.user_data['admin_action'] = None
@@ -1601,14 +1601,14 @@ async def handle_withdraw_amount(update, user_id, context, text):
 
         try:
             async with httpx.AsyncClient() as client: resp = await client.get(ultra_url, params=params, timeout=15)
-            text_resp = resp.text.lower()
-            if "success" in text_resp or '"status": true' in text_resp or '"status":true' in text_resp:
+            resp_text = resp.text.lower()
+            if "success" in resp_text or '"status": true' in resp_text or '"status":true' in resp_text:
                 await update.message.reply_text(f"✅ *ULTRA PAY PAYMENT SUCCESSFUL!*\n\n💰 Amount: Rs.{amount:.2f}\n📱 Number: {ultra_wallet}", parse_mode="Markdown")
             else:
                 async with turso_connect() as db:
                     await db.execute("UPDATE user_balance SET balance = balance + ? WHERE user_id=?", (amount, user_id))
                     await db.commit()
-                await update.message.reply_text(f"❌ *PAYMENT FAILED!*\n\nAPI Response: {text_resp[:100]}\nYour balance has been refunded.", parse_mode="Markdown")
+                await update.message.reply_text(f"❌ *PAYMENT FAILED!*\n\nAPI Response: {resp_text[:100]}\nYour balance has been refunded.", parse_mode="Markdown")
         except Exception as e:
             async with turso_connect() as db:
                 await db.execute("UPDATE user_balance SET balance = balance + ? WHERE user_id=?", (amount, user_id))
@@ -1624,7 +1624,7 @@ async def handle_withdraw_amount(update, user_id, context, text):
                 resp = await client.get(VSV_API_URL, params={"token": VSV_TOKEN, "paytm": vsv_wallet, "amount": str(int(amount)), "comment": "Withdrawal from UPI Giveaway Bot"}, timeout=15)
             resp_text = resp.text.strip()
             if "success" in resp_text.lower() or resp_text == "1":
-                await update.message.reply_text(f"✅ *VSV WALLET PAYMENT SUCCESSFUL!*\n\n💰 Amount: Rs.{amount:.2f}\n💳 Wallet: {vsv_wallet}\n\nAmount has been sent to your VSV Wallet!", parse_mode="Markdown")
+                await update.message.reply_text(f"✅ *VSV WALLET PAYMENT SUCCESSFUL!*\n\n💰 Amount: Rs.{amount:.2f}\nCNY Wallet: {vsv_wallet}\n\nAmount has been sent to your VSV Wallet!", parse_mode="Markdown")
             else:
                 async with turso_connect() as db:
                     await db.execute("UPDATE user_balance SET balance = balance + ? WHERE user_id=?", (amount, user_id))
@@ -1660,7 +1660,7 @@ async def handle_upi_link(update, user_id, upi_id):
 
 async def handle_vsv_link(update, user_id, vsv_number):
     vsv_number = vsv_number.strip()
-    if (!vsv_number.isdigit() or len(vsv_number) != 10):
+    if not vsv_number.isdigit() or len(vsv_number) != 10:
         await update.message.reply_text("⚠️ Invalid VSV Wallet Number. It Must Be Exactly 10 Digits.")
         return
     async with turso_connect() as db:
@@ -1875,48 +1875,62 @@ async def serve_verify_page():
     return Response(content=html_path.read_text(encoding="utf-8"), media_type="text/html", headers={"X-Frame-Options": "ALLOWALL", "Content-Security-Policy": "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:;", "Access-Control-Allow-Origin": "*", "Cache-Control": "no-cache"})
 
 
-# FIXED: Strict response output block string tags mapping!!
+# CRITICAL CRACK FIXED: Instant Pipeline Flush and Strict Verification mapping enabled!
 @app.post("/bot/api/verify-device")
 async def verify_device(payload: VerifyRequest, request: Request):
     user_data = validate_telegram_init_data(payload.init_data, BOT_TOKEN)
     if not user_data: raise HTTPException(status_code=403, detail="Invalid session")
     user_id = int(user_data.get("id"))
-    device_id = payload.device_id
-    persistent_id = payload.persistent_id or ""
+    device_id = str(payload.device_id)
+    persistent_id = str(payload.persistent_id or "")
 
     client_ip = request.headers.get("X-Forwarded-For", "").split(",")[0].strip() or request.headers.get("X-Real-IP", "") or (request.client.host if request.client else "")
 
     is_verified_by_device = True
-    async with turso_connect() as db:
-        row = await (await db.execute("SELECT user_id FROM device_registry WHERE device_id=?", (device_id,))).fetchone()
-        if row and int(row[0]) != user_id: is_verified_by_device = False
-        
-        if persistent_id and is_verified_by_device:
-            p_row = await (await db.execute("SELECT user_id FROM persistent_device_registry WHERE persistent_id=?", (persistent_id,))).fetchone()
-            if p_row and int(p_row[0]) != user_id: is_verified_by_device = False
-            
-        if client_ip and is_verified_by_device:
-            ip_row = await (await db.execute("SELECT user_id FROM ip_registry WHERE ip_address=?", (client_ip,))).fetchone()
-            if ip_row and int(ip_row[0]) != user_id: is_verified_by_device = False
+    
+    # CRITICAL: Har registry check se user_id cross check separate execute hoga pipeline clear karke
+    async with turso_connect() as db_check:
+        # 1. Device registry cross mapping
+        row = await (await db_check.execute("SELECT user_id FROM device_registry WHERE device_id=?", (device_id,))).fetchone()
+        if row and int(row[0]) != user_id: 
+            is_verified_by_device = False
 
-        # FIXED: Agar tracking unique h tabhi database entry insert hogi!
+        # 2. Persistent ID cross mapping
+        if persistent_id and is_verified_by_device:
+            p_row = await (await db_check.execute("SELECT user_id FROM persistent_device_registry WHERE persistent_id=?", (persistent_id,))).fetchone()
+            if p_row and int(p_row[0]) != user_id: 
+                is_verified_by_device = False
+
+        # 3. Client IP cross mapping
+        if client_ip and is_verified_by_device:
+            ip_row = await (await db_check.execute("SELECT user_id FROM ip_registry WHERE ip_address=?", (client_ip,))).fetchone()
+            if ip_row and int(ip_row[0]) != user_id: 
+                is_verified_by_device = False
+
+    # Dynamic status update section inside database
+    async with turso_connect() as db_write:
         if is_verified_by_device:
-            if not row: await db.execute("INSERT OR REPLACE INTO device_registry (device_id, user_id) VALUES (?, ?)", (device_id, user_id))
-            if persistent_id and not (p_row if persistent_id else None): await db.execute("INSERT OR REPLACE INTO persistent_device_registry (persistent_id, user_id) VALUES (?, ?)", (persistent_id, user_id))
-            if client_ip: await db.execute("INSERT OR REPLACE INTO ip_registry (ip_address, user_id) VALUES (?, ?)", (client_ip, user_id))
+            await db_write.execute("INSERT OR REPLACE INTO device_registry (device_id, user_id) VALUES (?, ?)", (device_id, user_id))
+            if persistent_id: 
+                await db_write.execute("INSERT OR REPLACE INTO persistent_device_registry (persistent_id, user_id) VALUES (?, ?)", (persistent_id, user_id))
+            if client_ip: 
+                await db_write.execute("INSERT OR REPLACE INTO ip_registry (ip_address, user_id) VALUES (?, ?)", (client_ip, user_id))
         
         now = datetime.utcnow().isoformat()
-        already_verified = await (await db.execute("SELECT is_verified FROM users WHERE user_id=?", (user_id,))).fetchone()
+        already_verified = await (await db_write.execute("SELECT is_verified FROM users WHERE user_id=?", (user_id,))).fetchone()
         was_verified = int(already_verified[0]) if already_verified and already_verified[0] is not None else 0
 
         final_status = 1 if is_verified_by_device else 0
-        await db.execute("""INSERT INTO users (user_id, username, first_name, is_verified, device_id, verified_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET is_verified=excluded.is_verified, device_id=excluded.device_id, verified_at=excluded.verified_at""", (user_id, user_data.get("username"), user_data.get("first_name"), final_status, device_id, now))
+        await db_write.execute("""INSERT INTO users (user_id, username, first_name, is_verified, device_id, verified_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET is_verified=excluded.is_verified, device_id=excluded.device_id, verified_at=excluded.verified_at""", (user_id, user_data.get("username"), user_data.get("first_name"), final_status, device_id, now))
         
-        existing_balance = await (await db.execute("SELECT balance FROM user_balance WHERE user_id=?", (user_id,))).fetchone()
-        if not existing_balance: await db.execute("INSERT OR IGNORE INTO user_balance (user_id, balance) VALUES (?,?)", (user_id, 0.0))
-        await db.commit()
+        existing_balance = await (await db_write.execute("SELECT balance FROM user_balance WHERE user_id=?", (user_id,))).fetchone()
+        if not existing_balance: 
+            await db_write.execute("INSERT OR IGNORE INTO user_balance (user_id, balance) VALUES (?,?)", (user_id, 0.0))
+        
+        await db_write.commit()
 
-    if was_verified == 0: await process_referral_and_verify(user_id, bot_app_global.bot, is_verified_by_device=is_verified_by_device)
+    if was_verified == 0: 
+        await process_referral_and_verify(user_id, bot_app_global.bot, is_verified_by_device=is_verified_by_device)
     
     try:
         keyboard = await get_user_keyboard_async(user_id)
@@ -1926,10 +1940,14 @@ async def verify_device(payload: VerifyRequest, request: Request):
             await bot_app_global.bot.send_message(chat_id=user_id, text="❌ *DEVICE VERIFICATION FAILED*\n\nMultiple IDs detected on this device. You can still use the bot features normally.", parse_mode="Markdown", reply_markup=keyboard)
         
         await bot_app_global.bot.send_message(chat_id=user_id, text=f"😍 Welcome, <b>{html.escape(str(user_data.get('first_name','User')))}</b>!\n\n💸 Earn Money • Refer Friends • Withdraw Instantly\n\n👇 Use button below to get started", parse_mode="HTML", reply_markup=keyboard)
-    except Exception as e: logger.error(f"Menu error: {e}")
+    except Exception as e: 
+        logger.error(f"Menu error: {e}")
 
-    # FIXED HERE: Status string return strictly update kiya h failed execution ko "blocked" map karke taaki verify.html showBlocked() call kare!
-    return {"status": "verified"} if is_verified_by_device else {"status": "blocked"}
+    # BUG PERMANENTLY SMASHED HERE: Fail hone par frontend ko strict dynamic mapping response return hoga!
+    if is_verified_by_device:
+        return {"status": "verified"}
+    else:
+        return {"status": "failed"}
 
 @app.api_route("/bot/healthz", methods=["GET", "HEAD"])
 async def health(): return {"status": "ok"}
