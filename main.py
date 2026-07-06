@@ -664,11 +664,6 @@ async def web_app_data_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     try:
         payload = json.loads(data)
         if payload.get("status") == "verified":
-            await update.message.reply_text(
-                f"✅ *VERIFIED SUCCESSFULLY!*",
-                parse_mode="Markdown",
-                reply_markup=await get_user_keyboard_async(user.id)
-            )
             await send_main_menu(update, user.first_name, user.id)
         elif payload.get("status") == "blocked":
             await update.message.reply_text(
@@ -2398,11 +2393,7 @@ async def verify_device(payload: VerifyRequest, request: Request):
     
     try:
         keyboard = await get_user_keyboard_async(user_id)
-        await bot_app_global.bot.send_message(
-            chat_id=user_id,
-            text="✅ *Device Verified Successfully!*",
-            parse_mode="Markdown"
-        )
+        # BHEJ DIYA SIRF WELCOME MESSAGE! (Verification success wali line hata di gayi hai)
         await bot_app_global.bot.send_message(
             chat_id=user_id,
             text=f"😍 Welcome, <b>{safe_first_name}</b>!\n\n💸 Earn Money • Refer Friends • Withdraw Instantly\n\n👇 Use button below to get started",
