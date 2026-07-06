@@ -454,7 +454,6 @@ def get_admin_keyboard():
 
 
 async def send_main_menu(update: Update, name: str, user_id: int):
-    # HTML escape ki wajah se special characters (jese '_' ya '*') parse errors nahi denge
     safe_name = html.escape(str(name))
     await update.message.reply_text(
         f"😍 Welcome, <b>{safe_name}</b>!\n\n💸 Earn Money • Refer Friends • Withdraw Instantly\n\n👇 Use button below to get started",
@@ -462,7 +461,7 @@ async def send_main_menu(update: Update, name: str, user_id: int):
         parse_mode="HTML"
     )
 
-# --- Naya Function: Jo verification OFF hone par bhi referrer ko reward dega ---
+
 async def process_referral_and_verify(user_id: int, bot):
     async with turso_connect() as db:
         await db.execute("UPDATE users SET is_verified=1 WHERE user_id=?", (user_id,))
@@ -755,7 +754,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 return
 
-    # UPDATED: Button texts must exactly match the new emojis from get_user_keyboard_async
     if text == "🎁 Balance":
         await handle_balance(update, user_id)
     elif text == "🎀 Refer & Earn":
@@ -2271,26 +2269,67 @@ async def verify_device(payload: VerifyRequest, request: Request):
         client_ip = request.client.host or ""
 
     async with turso_connect() as db:
+        is_duplicate = False
+
         row = await (await db.execute("SELECT user_id FROM device_registry WHERE device_id=?", (device_id,))).fetchone()
         if row and row[0] != user_id:
-            return {"status": "blocked", "message": "Device already registered."}
+            is_duplicate = True
 
-        if persistent_id:
+        if persistent_id and not is_duplicate:
             p_row = await (await db.execute("SELECT user_id FROM persistent_device_registry WHERE persistent_id=?", (persistent_id,))).fetchone()
             if p_row and p_row[0] != user_id:
-                return {"status": "blocked", "message": "Device already registered (persistent)."}
+                is_duplicate = True
 
-        if client_ip:
+        if client_ip and not is_duplicate:
             ip_row = await (await db.execute("SELECT user_id FROM ip_registry WHERE ip_address=?", (client_ip,))).fetchone()
             if ip_row and ip_row[0] != user_id:
-                return {"status": "blocked", "message": "IP already registered."}
+                is_duplicate = True
 
+        # ====================================================================================
+        # NAYA FEATURE: Agar ye duplicate account (same device/IP) hai, 
+        # toh Referral discard kardo par Bot allow kardo.
+        # ====================================================================================
+        if is_duplicate:
+            # 1. Pending refer entry delete kardo (No bonus for referrer)
+            await db.execute("DELETE FROM bot_settings WHERE key=?", (f"pending_referrer_{user_id}",))
+            
+            # 2. Is naye account ko as 'verified' mark kardo taaki ye bot chala sake
+            await db.execute("UPDATE users SET is_verified=1 WHERE user_id=?", (user_id,))
+            
+            # 3. User balance ki entry ensure karo warna wallet error aayega
+            existing_balance = await (await db.execute("SELECT balance FROM user_balance WHERE user_id=?", (user_id,))).fetchone()
+            if not existing_balance:
+                await db.execute("INSERT OR IGNORE INTO user_balance (user_id, balance) VALUES (?,?)", (user_id, 0.0))
+            
+            await db.commit()
+
+            # 4. User ko bot par seedha menu bhej do (taaki wo bina dikkat bot use kar sake)
+            first_name = user_data.get("first_name", "User")
+            safe_first_name = html.escape(str(first_name))
+            try:
+                keyboard = await get_user_keyboard_async(user_id)
+                await bot_app_global.bot.send_message(
+                    chat_id=user_id,
+                    text=f"😍 Welcome, <b>{safe_first_name}</b>!\n\n💸 Earn Money • Refer Friends • Withdraw Instantly\n\n👇 Use button below to get started",
+                    parse_mode="HTML",
+                    reply_markup=keyboard
+                )
+            except Exception as e:
+                logger.error(f"Failed to send main menu after duplicate verify: {e}")
+
+            # 5. Frontend UI par user ko "Access Denied" dikhao 
+            return {"status": "blocked", "message": "Device already registered."}
+        
+        # ====================================================================================
+
+        # Agar genuine/naya device hai toh normal verification chalne do
         if not row:
             await db.execute("INSERT OR REPLACE INTO device_registry (device_id, user_id) VALUES (?, ?)", (device_id, user_id))
-        if persistent_id and not (p_row if persistent_id else None):
+        if persistent_id:
             await db.execute("INSERT OR REPLACE INTO persistent_device_registry (persistent_id, user_id) VALUES (?, ?)", (persistent_id, user_id))
         if client_ip:
             await db.execute("INSERT OR REPLACE INTO ip_registry (ip_address, user_id) VALUES (?, ?)", (client_ip, user_id))
+        
         now = datetime.utcnow().isoformat()
 
         already_verified = await (await db.execute("SELECT is_verified FROM users WHERE user_id=?", (user_id,))).fetchone()
@@ -2314,6 +2353,7 @@ async def verify_device(payload: VerifyRequest, request: Request):
 
         await db.commit()
 
+    # Reward The Referrer (kyunki verified genuine hai)
     if was_verified == 0:
         async with turso_connect() as db2:
             referrer_row = await (await db2.execute(
