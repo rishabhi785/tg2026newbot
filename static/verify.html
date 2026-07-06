@@ -3,382 +3,339 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Premium Device Auth</title>
-<!-- Modern Geometric Font -->
-<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+<title>Device Verification</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
   :root {
-    --bg-base: #05050a;
-    --glass-bg: rgba(255, 255, 255, 0.03);
-    --glass-border: rgba(255, 255, 255, 0.08);
-    --text-main: #ffffff;
-    --text-muted: #94a3b8;
+    /* Exact colors from your screenshot */
+    --bg-main: #0B0E17;
+    --bg-card: #121722;
+    --text-primary: #FFFFFF;
+    --text-secondary: #8B94A5;
     
-    /* Holographic Colors */
-    --cyan: #00f0ff;
-    --purple: #8a2be2;
-    --magenta: #ff007f;
-    --green: #00ff88;
-    --red: #ff3366;
-    --orange: #ff9800; /* New color for warning */
+    --neon-blue: #3B82F6;
+    --neon-green: #00E676;
+    --neon-orange: #FF9800;
   }
 
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
   body {
-    font-family: 'Outfit', sans-serif;
-    background-color: var(--bg-base);
-    color: var(--text-main);
+    font-family: 'Inter', -apple-system, sans-serif;
+    background-color: var(--bg-main);
+    color: var(--text-primary);
     min-height: 100vh;
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
-    overflow: hidden;
-    position: relative;
   }
 
-  /* --- 3D Holographic Background Orbs --- */
-  .orb {
-    position: absolute;
-    border-radius: 50%;
-    filter: blur(80px);
-    opacity: 0.6;
-    animation: floatOrb 10s infinite alternate ease-in-out;
-    z-index: 1;
-  }
-  .orb-1 {
-    width: 300px; height: 300px;
-    background: var(--purple);
-    top: -50px; left: -100px;
-  }
-  .orb-2 {
-    width: 250px; height: 250px;
-    background: var(--cyan);
-    bottom: -50px; right: -50px;
-    animation-delay: -5s;
-  }
-  .orb-3 {
-    width: 200px; height: 200px;
-    background: var(--magenta);
-    top: 40%; left: 30%;
-    opacity: 0.4;
-    animation-duration: 15s;
-  }
-
-  @keyframes floatOrb {
-    0% { transform: translate(0, 0) scale(1); }
-    100% { transform: translate(40px, 40px) scale(1.2); }
-  }
-
-  /* --- Main Glassmorphism Container --- */
-  .glass-card {
-    position: relative;
-    z-index: 10;
-    width: 90%;
-    max-width: 380px;
-    background: var(--glass-bg);
-    backdrop-filter: blur(24px);
-    -webkit-backdrop-filter: blur(24px);
-    border: 1px solid var(--glass-border);
-    border-radius: 32px;
-    padding: 35px 25px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    box-shadow: 0 30px 60px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255,255,255,0.1);
-  }
-
-  /* User Profile Header inside Card */
-  .user-header {
-    display: flex;
-    align-items: center;
-    gap: 15px;
+  /* --- Top Header Profile --- */
+  .header {
     width: 100%;
-    margin-bottom: 35px;
-    padding-bottom: 20px;
-    border-bottom: 1px solid rgba(255,255,255,0.05);
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  }
+
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
   }
 
   .avatar {
-    width: 48px; height: 48px;
-    border-radius: 16px;
-    background: linear-gradient(135deg, var(--cyan), var(--purple));
+    width: 42px; height: 42px;
+    border-radius: 50%;
+    background-color: #1E293B;
+    background-size: cover;
+    background-position: center;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 20px;
-    font-weight: 800;
+    font-size: 18px;
+    font-weight: 700;
     color: #fff;
-    box-shadow: 0 10px 20px rgba(138, 43, 226, 0.3);
   }
 
-  .user-details { flex: 1; }
-  .user-name { font-size: 16px; font-weight: 600; }
-  .user-status {
-    font-size: 12px;
+  .user-info {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .user-name {
+    font-size: 15px;
     font-weight: 600;
-    color: var(--cyan);
-    margin-top: 4px;
-    text-transform: uppercase;
-    letter-spacing: 1px;
+    color: var(--text-primary);
+  }
+
+  .user-id {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-top: 2px;
+  }
+
+  /* Status Badge */
+  .badge {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 6px 12px;
+    border-radius: 20px;
+    letter-spacing: 0.5px;
     display: flex;
     align-items: center;
     gap: 6px;
+    text-transform: uppercase;
   }
-  .user-status::before {
+  .badge::before {
     content: '';
     width: 6px; height: 6px;
-    background: var(--cyan);
     border-radius: 50%;
-    box-shadow: 0 0 10px var(--cyan);
-    animation: pulse 1.5s infinite;
   }
 
-  /* --- 3D Holographic Loader --- */
-  .hologram-container {
+  .badge-scanning {
+    background: rgba(59, 130, 246, 0.15);
+    color: var(--neon-blue);
+    border: 1px solid rgba(59, 130, 246, 0.3);
+  }
+  .badge-scanning::before { background: var(--neon-blue); animation: pulse 1.5s infinite; }
+
+  .badge-active {
+    background: rgba(0, 230, 118, 0.15);
+    color: var(--neon-green);
+    border: 1px solid rgba(0, 230, 118, 0.3);
+  }
+  .badge-active::before { background: var(--neon-green); }
+
+  .badge-warning {
+    background: rgba(255, 152, 0, 0.15);
+    color: var(--neon-orange);
+    border: 1px solid rgba(255, 152, 0, 0.3);
+  }
+  .badge-warning::before { background: var(--neon-orange); }
+
+  /* --- Main Card --- */
+  .main-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    padding: 20px;
+  }
+
+  .card {
+    width: 100%;
+    max-width: 360px;
+    background: var(--bg-card);
+    border-radius: 24px;
+    padding: 40px 24px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+  }
+
+  /* --- Glowing Icon & Concentric Rings --- */
+  .icon-wrapper {
     position: relative;
-    width: 140px; height: 140px;
-    margin-bottom: 30px;
+    width: 120px;
+    height: 120px;
     display: flex;
     align-items: center;
     justify-content: center;
-    perspective: 800px;
+    margin-bottom: 30px;
   }
 
-  .holo-ring {
+  .ring {
     position: absolute;
     border-radius: 50%;
     border: 2px solid transparent;
-    transition: all 0.8s ease;
+    transition: all 0.5s ease;
   }
+  .ring-1 { width: 100%; height: 100%; opacity: 0.3; }
+  .ring-2 { width: 75%; height: 75%; opacity: 0.6; }
 
-  .ring-outer {
-    width: 100%; height: 100%;
-    border-top-color: var(--cyan);
-    border-bottom-color: var(--purple);
-    animation: spin3D 4s linear infinite;
-  }
-
-  .ring-inner {
-    width: 75%; height: 75%;
-    border-left-color: var(--magenta);
-    border-right-color: var(--cyan);
-    animation: spin3D 3s linear infinite reverse;
-  }
-
-  .icon-center {
-    position: absolute;
-    width: 60px; height: 60px;
-    background: rgba(255,255,255,0.05);
-    border-radius: 50%;
-    backdrop-filter: blur(5px);
+  .icon-inner {
+    position: relative;
+    z-index: 2;
+    width: 50px; height: 50px;
     display: flex;
     align-items: center;
     justify-content: center;
-    border: 1px solid rgba(255,255,255,0.2);
-    box-shadow: 0 0 20px rgba(0, 240, 255, 0.2);
+    transition: all 0.5s ease;
+  }
+  .icon-inner svg {
+    width: 100%; height: 100%;
     transition: all 0.5s ease;
   }
 
-  .icon-center svg { width: 30px; height: 30px; stroke: var(--cyan); transition: stroke 0.5s; }
+  /* States mapping to icon/rings */
+  .state-scanning .ring { border-color: var(--neon-blue); }
+  .state-scanning .icon-inner svg { stroke: var(--neon-blue); filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.8)); }
+  
+  .state-verified .ring { border-color: var(--neon-green); }
+  .state-verified .icon-inner svg { stroke: var(--neon-green); filter: drop-shadow(0 0 8px rgba(0, 230, 118, 0.8)); }
 
-  @keyframes spin3D {
-    0% { transform: rotateX(60deg) rotateY(0deg) rotateZ(0deg); }
-    100% { transform: rotateX(60deg) rotateY(360deg) rotateZ(360deg); }
-  }
+  .state-blocked .ring { border-color: var(--neon-orange); }
+  .state-blocked .icon-inner svg { stroke: var(--neon-orange); filter: drop-shadow(0 0 8px rgba(255, 152, 0, 0.8)); }
 
-  /* States mapping to Loader */
-  .state-verified .ring-outer, .state-verified .ring-inner {
-    border-color: var(--green);
-    animation: none;
-    transform: rotateX(0) rotateY(0) scale(1.1);
-    opacity: 0.2;
-  }
-  .state-verified .icon-center { box-shadow: 0 0 30px rgba(0, 255, 136, 0.4); border-color: var(--green); }
-  .state-verified .icon-center svg { stroke: var(--green); }
-  .state-verified .user-status { color: var(--green); }
-  .state-verified .user-status::before { background: var(--green); box-shadow: 0 0 10px var(--green); }
-
-  .state-blocked .ring-outer, .state-blocked .ring-inner {
-    border-color: var(--orange);
-    animation: none;
-    transform: rotateX(0) rotateY(0) scale(1.1);
-    opacity: 0.2;
-  }
-  .state-blocked .icon-center { box-shadow: 0 0 30px rgba(255, 152, 0, 0.3); border-color: var(--orange); }
-  .state-blocked .icon-center svg { stroke: var(--orange); }
-  .state-blocked .user-status { color: var(--orange); }
-  .state-blocked .user-status::before { background: var(--orange); box-shadow: 0 0 10px var(--orange); }
-
-  /* --- Texts --- */
+  /* --- Text Styles --- */
   .title {
-    font-size: 24px;
-    font-weight: 800;
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 10px;
     text-align: center;
-    margin-bottom: 8px;
-    letter-spacing: 0.5px;
-    background: linear-gradient(to right, #fff, #cbd5e1);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    transition: 0.3s;
+    transition: color 0.3s;
   }
+  .title.green { color: var(--neon-green); }
+  .title.orange { color: var(--neon-orange); }
+
   .subtitle {
     font-size: 13px;
-    color: var(--text-muted);
+    color: var(--text-secondary);
     text-align: center;
-    line-height: 1.6;
+    line-height: 1.5;
     margin-bottom: 30px;
-    font-weight: 300;
   }
 
-  /* --- Glowing Wave Progress --- */
+  /* --- Progress Bar --- */
   .progress-wrap { width: 100%; }
   
-  .progress-head {
-    display: flex;
-    justify-content: space-between;
-    font-size: 12px;
-    font-weight: 600;
-    margin-bottom: 10px;
-  }
-  .progress-label { color: var(--cyan); letter-spacing: 1px; }
-  .progress-pct { color: #fff; }
-
-  .progress-track {
+  .progress-bg {
     width: 100%;
-    height: 6px;
-    background: rgba(0,0,0,0.3);
-    border-radius: 10px;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
     overflow: hidden;
-    position: relative;
-    box-shadow: inset 0 1px 3px rgba(0,0,0,0.5);
+    margin-bottom: 10px;
   }
 
   .progress-fill {
     height: 100%;
     width: 0%;
-    border-radius: 10px;
-    background: linear-gradient(90deg, var(--purple), var(--cyan), var(--magenta));
-    background-size: 200% 100%;
-    animation: waveGradient 2s linear infinite;
-    box-shadow: 0 0 15px rgba(0, 240, 255, 0.5);
-    transition: width 0.3s ease;
+    background: var(--neon-blue);
+    border-radius: 4px;
+    box-shadow: 0 0 10px var(--neon-blue);
+    transition: width 0.2s linear;
   }
 
-  @keyframes waveGradient {
-    0% { background-position: 100% 0; }
-    100% { background-position: -100% 0; }
+  .progress-texts {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--neon-blue);
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
   }
 
-  /* --- Glass Button --- */
-  .btn-glass {
+  /* --- Glowing Button --- */
+  .btn-continue {
     width: 100%;
     padding: 16px;
-    border-radius: 16px;
-    background: rgba(0, 255, 136, 0.1);
-    border: 1px solid rgba(0, 255, 136, 0.3);
-    color: var(--green);
-    font-family: 'Outfit', sans-serif;
+    border-radius: 12px;
+    background: var(--neon-green);
+    color: #000;
+    border: none;
+    font-family: 'Inter', sans-serif;
     font-size: 15px;
-    font-weight: 600;
-    letter-spacing: 1px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
     cursor: pointer;
-    backdrop-filter: blur(10px);
+    box-shadow: 0 0 20px rgba(0, 230, 118, 0.4);
     display: none;
-    transition: all 0.3s;
-    box-shadow: 0 10px 20px rgba(0, 255, 136, 0.1);
-    margin-top: 10px;
+    transition: all 0.2s;
   }
-  .btn-glass:hover {
-    background: rgba(0, 255, 136, 0.2);
-    transform: translateY(-2px);
-  }
+  .btn-continue:active { transform: scale(0.98); box-shadow: 0 0 10px rgba(0, 230, 118, 0.6); }
 
-  /* --- Alert Info --- */
+  /* --- Friendly Warning Box --- */
   .alert-box {
     width: 100%;
     background: rgba(255, 152, 0, 0.1);
-    border: 1px solid rgba(255, 152, 0, 0.3);
-    padding: 15px;
-    border-radius: 16px;
-    font-size: 13.5px;
+    border: 1px solid rgba(255, 152, 0, 0.2);
+    border-radius: 12px;
+    padding: 14px;
+    font-size: 12px;
     color: #ffcc80;
     text-align: center;
     line-height: 1.5;
+    margin-bottom: 20px;
     display: none;
-    backdrop-filter: blur(10px);
-    margin-top: 10px;
   }
 
   @keyframes pulse {
     0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
+    50% { opacity: 0.4; }
   }
 </style>
 </head>
 <body>
 
-<!-- Holographic Background Orbs -->
-<div class="orb orb-1"></div>
-<div class="orb orb-2"></div>
-<div class="orb orb-3"></div>
-
-<!-- Main Glass Card -->
-<div class="glass-card" id="mainCard">
-  
-  <!-- Header inside card -->
-  <div class="user-header">
+<!-- Header Profile -->
+<div class="header">
+  <div class="header-left">
     <div class="avatar" id="avatarEl">?</div>
-    <div class="user-details">
+    <div class="user-info">
       <div class="user-name" id="nameEl">Loading...</div>
-      <div class="user-status" id="statusBadge">Scanning</div>
+      <div class="user-id" id="idEl">ID: —</div>
     </div>
   </div>
+  <div class="badge badge-scanning" id="statusBadge">Scanning</div>
+</div>
 
-  <!-- Holographic 3D Loader -->
-  <div class="hologram-container">
-    <div class="holo-ring ring-outer"></div>
-    <div class="holo-ring ring-inner"></div>
-    <div class="icon-center">
-      <!-- Fingerprint SVG -->
-      <svg id="iconSvg" viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M12 12v.01" opacity="0"></path>
-        <path d="M7 16V9a5 5 0 0 1 10 0v7"></path>
-        <path d="M5 13v-4a7 7 0 0 1 14 0v4"></path>
-        <path d="M9 16v-2a3 3 0 0 1 6 0v2"></path>
-        <path d="M12 21v-4"></path>
-      </svg>
+<!-- Main Area -->
+<div class="main-content">
+  <div class="card">
+    
+    <!-- Icon & Rings -->
+    <div class="icon-wrapper state-scanning" id="iconWrap">
+      <div class="ring ring-1"></div>
+      <div class="ring ring-2"></div>
+      <div class="icon-inner">
+        <!-- Default Fingerprint SVG -->
+        <svg id="iconSvg" viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22" stroke-dasharray="4 4" opacity="0.3"/>
+          <path d="M7.5 9.5C7.5 9.5 9.5 7 12 7C14.5 7 16.5 9.5 16.5 9.5"/>
+          <path d="M5.5 13C5.5 13 8 9.5 12 9.5C16 9.5 18.5 13 18.5 13"/>
+          <path d="M8 16.5C8 16.5 10.5 13.5 12 13.5C13.5 13.5 15.5 15.5 15.5 15.5"/>
+          <path d="M10 19C10 19 11 16.5 12 16.5C13 16.5 14 19 14 19"/>
+        </svg>
+      </div>
     </div>
-  </div>
 
-  <!-- Dynamic Texts -->
-  <div class="title" id="titleEl">Verifying Device</div>
-  <div class="subtitle" id="subtitleEl">Establishing a holographic handshake and verifying node integrity...</div>
+    <!-- Texts -->
+    <div class="title" id="titleEl">Verifying Device</div>
+    <div class="subtitle" id="subtitleEl">Establishing secure handshake...</div>
 
-  <!-- Progress Tracker -->
-  <div class="progress-wrap" id="progressWrap">
-    <div class="progress-head">
-      <div class="progress-label" id="scanLabel">ANALYZING</div>
-      <div class="progress-pct" id="pctEl">0%</div>
+    <!-- Friendly Alert (Hidden by default) -->
+    <div class="alert-box" id="blockedInfo">
+      Device already registered. Referral bonus voided for multi-accounts, but you can still use the bot and earn normally!
     </div>
-    <div class="progress-track">
-      <div class="progress-fill" id="progressFill"></div>
+
+    <!-- Progress Tracker -->
+    <div class="progress-wrap" id="progressWrap">
+      <div class="progress-bg">
+        <div class="progress-fill" id="progressFill"></div>
+      </div>
+      <div class="progress-texts">
+        <span id="scanLabel">ANALYSIS IN PROGRESS</span>
+        <span id="pctEl">0%</span>
+      </div>
     </div>
+
+    <!-- Glowing Continue Button -->
+    <button class="btn-continue" id="continueBtn" onclick="continueToBot()">
+      CONTINUE TO BOT
+    </button>
+
   </div>
-
-  <!-- Continue Button -->
-  <button class="btn-glass" id="continueBtn" onclick="continueToBot()">
-    PROCEED TO BOT
-  </button>
-
-  <!-- Blocked / Alert Message -->
-  <div class="alert-box" id="blockedInfo">
-    <strong style="color: #ff9800;">Device Already Registered</strong><br><br>
-    Referral bonus is voided for multiple accounts, but you can still use the bot and earn normally!
-  </div>
-
 </div>
 
 <script>
@@ -387,15 +344,25 @@
   if (tg) {
     tg.ready();
     tg.expand();
-    tg.setHeaderColor('#05050a'); 
-    tg.setBackgroundColor('#05050a');
+    tg.setHeaderColor('#0B0E17'); 
+    tg.setBackgroundColor('#0B0E17');
   }
 
-  // Set User Profile
+  // Populate User Info (Uses Photo URL if available)
   const user = tg?.initDataUnsafe?.user || {};
   const name = user.first_name || 'User';
+  const userId = user.id || '—';
+  
   document.getElementById('nameEl').textContent = name;
-  document.getElementById('avatarEl').textContent = name.charAt(0).toUpperCase();
+  document.getElementById('idEl').textContent = 'ID: ' + userId;
+  
+  const avatarEl = document.getElementById('avatarEl');
+  if (user.photo_url) {
+    avatarEl.style.backgroundImage = `url(${user.photo_url})`;
+    avatarEl.textContent = ''; // Clear text if image exists
+  } else {
+    avatarEl.textContent = name.charAt(0).toUpperCase();
+  }
 
   // Core Fingerprinting Logic
   function getPersistentDeviceId() {
@@ -477,16 +444,8 @@
   function animateProgress(target, duration, onDone) {
     const fill = document.getElementById('progressFill');
     const pct = document.getElementById('pctEl');
-    const label = document.getElementById('scanLabel');
     let current = parseInt(fill.style.width) || 0;
     const start = performance.now();
-
-    const messages = [
-      [0, 'INITIALIZING'],
-      [30, 'GATHERING NODE DATA'],
-      [60, 'ENCRYPTING SIGNATURE'],
-      [85, 'FINALIZING AUTH']
-    ];
 
     function step(now) {
       const elapsed = now - start;
@@ -495,65 +454,67 @@
       fill.style.width = current + '%';
       pct.textContent = current + '%';
 
-      const msg = messages.filter(m => m[0] <= current).pop();
-      if (msg) label.textContent = msg[1];
-
       if (prog < 1) requestAnimationFrame(step);
       else if (onDone) onDone();
     }
     requestAnimationFrame(step);
   }
 
-  // Transition to Verified UI
+  // State: Verified
   function showVerified() {
-    document.getElementById('mainCard').classList.add('state-verified');
+    document.getElementById('iconWrap').className = 'icon-wrapper state-verified';
+    
+    // Change Icon to Checkmark
+    document.getElementById('iconSvg').innerHTML = `
+      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" stroke-width="2"/>
+      <polyline points="22 4 12 14.01 9 11.01" stroke-width="2"/>
+    `;
     
     let titleEl = document.getElementById('titleEl');
-    titleEl.textContent = 'Identity Verified';
-    titleEl.style.background = 'none';
-    titleEl.style.webkitTextFillColor = 'initial';
-    titleEl.style.color = 'var(--green)';
+    titleEl.textContent = 'Verified Successfully';
+    titleEl.className = 'title green';
     
-    document.getElementById('subtitleEl').textContent = 'Authentication complete. Your connection is highly secure.';
-    document.getElementById('statusBadge').textContent = 'Active';
+    document.getElementById('subtitleEl').textContent = "You're verified successfully, you can use our bot now.";
+    
+    // Update Top Badge
+    let badge = document.getElementById('statusBadge');
+    badge.className = 'badge badge-active';
+    badge.textContent = 'Active';
+
+    // Hide Progress, Show Button
     document.getElementById('progressWrap').style.display = 'none';
-    
     document.getElementById('continueBtn').style.display = 'block';
-    document.getElementById('continueBtn').textContent = 'PROCEED TO BOT';
-    
-    // Checkmark SVG
-    document.getElementById('iconSvg').innerHTML = `
-      <polyline points="20 6 9 17 4 12" stroke-width="2.5"></polyline>
-    `;
   }
 
-  // Transition to Blocked UI (Now made friendly warning instead of angry red block)
+  // State: Device Notice / Multi-Account Warning
   function showBlocked() {
-    document.getElementById('mainCard').classList.add('state-blocked');
+    document.getElementById('iconWrap').className = 'icon-wrapper state-blocked';
     
+    // Change Icon to Exclamation Alert
+    document.getElementById('iconSvg').innerHTML = `
+      <circle cx="12" cy="12" r="10" stroke-width="2"/>
+      <line x1="12" y1="8" x2="12" y2="12" stroke-width="2"/>
+      <line x1="12" y1="16" x2="12.01" y2="16" stroke-width="2.5"/>
+    `;
+
     let titleEl = document.getElementById('titleEl');
-    titleEl.textContent = 'Device Alert';
-    titleEl.style.background = 'none';
-    titleEl.style.webkitTextFillColor = 'initial';
-    titleEl.style.color = 'var(--orange)';
-    
+    titleEl.textContent = 'Device Notice';
+    titleEl.className = 'title orange';
+
     document.getElementById('subtitleEl').style.display = 'none';
-    document.getElementById('statusBadge').textContent = 'Warning';
+    
+    // Update Top Badge
+    let badge = document.getElementById('statusBadge');
+    badge.className = 'badge badge-warning';
+    badge.textContent = 'Warning';
+
+    // Show Warning text and Continue button
     document.getElementById('progressWrap').style.display = 'none';
     document.getElementById('blockedInfo').style.display = 'block';
-
-    // Info/Warning SVG Icon
-    document.getElementById('iconSvg').innerHTML = `
-      <circle cx="12" cy="12" r="10" stroke-width="2"></circle>
-      <line x1="12" y1="8" x2="12" y2="12" stroke-width="2.5"></line>
-      <line x1="12" y1="16" x2="12.01" y2="16" stroke-width="2.5"></line>
-    `;
-
-    // Button to proceed to bot
     document.getElementById('continueBtn').style.display = 'block';
-    document.getElementById('continueBtn').textContent = 'PROCEED TO BOT';
   }
 
+  // Button Action
   function continueToBot() {
     if (tg) {
       try { tg.switchInlineQuery('verified', ['bots']); } 
@@ -562,14 +523,14 @@
     }
   }
 
-  // Main Verification Flow
+  // Main Flow
   async function startVerification() {
     const initData = tg?.initData || '';
 
     animateProgress(40, 1500, async () => {
       const deviceId = await getDeviceFingerprint();
 
-      animateProgress(80, 1200, async () => {
+      animateProgress(70, 1000, async () => {
         try {
           const persistentId = getPersistentDeviceId();
           const response = await fetch('/bot/api/verify-device', {
@@ -596,7 +557,7 @@
     });
   }
 
-  // Auto-start on load
+  // Start on load
   window.addEventListener('DOMContentLoaded', () => {
     setTimeout(startVerification, 800);
   });
