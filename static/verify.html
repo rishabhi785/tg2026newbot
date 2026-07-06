@@ -396,7 +396,7 @@
   document.getElementById('nameEl').textContent = name;
   document.getElementById('avatarEl').textContent = name.charAt(0).toUpperCase();
 
-  // Core Fingerprinting Logic (Unchanged for Backend Compatibility)
+  // Core Fingerprinting Logic
   function getPersistentDeviceId() {
     try {
       let pid = localStorage.getItem('_tg_dev_pid');
@@ -507,7 +507,6 @@
   function showVerified() {
     document.getElementById('mainCard').classList.add('state-verified');
     
-    // Yahan fix kiya gaya hai (No Solid Box)
     let titleEl = document.getElementById('titleEl');
     titleEl.textContent = 'Identity Verified';
     titleEl.style.background = 'none';
@@ -517,7 +516,9 @@
     document.getElementById('subtitleEl').textContent = 'Authentication complete. Your connection is highly secure.';
     document.getElementById('statusBadge').textContent = 'Active';
     document.getElementById('progressWrap').style.display = 'none';
+    
     document.getElementById('continueBtn').style.display = 'block';
+    document.getElementById('continueBtn').textContent = 'PROCEED TO BOT';
     
     // Checkmark SVG
     document.getElementById('iconSvg').innerHTML = `
@@ -529,7 +530,6 @@
   function showBlocked() {
     document.getElementById('mainCard').classList.add('state-blocked');
     
-    // Yahan fix kiya gaya hai (No Solid Box)
     let titleEl = document.getElementById('titleEl');
     titleEl.textContent = 'Access Denied';
     titleEl.style.background = 'none';
@@ -546,6 +546,11 @@
       <line x1="18" y1="6" x2="6" y2="18" stroke-width="2.5"></line>
       <line x1="6" y1="6" x2="18" y2="18" stroke-width="2.5"></line>
     `;
+
+    // 🔴 FIX: Yahan Failed hone pe bhi button dikhega, 
+    // taaki click karne pe chat box me wapas jaye aur keyboard turant aaye.
+    document.getElementById('continueBtn').style.display = 'block';
+    document.getElementById('continueBtn').textContent = 'PROCEED TO BOT';
   }
 
   function continueToBot() {
