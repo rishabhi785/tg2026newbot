@@ -327,22 +327,32 @@ async def check_all_channels(bot, user_id: int) -> bool:
         ch_type = ch[4] if len(ch) > 4 else 'public'
         if ch_type == 'link_only':
             continue
+            
         if ch_type == 'private':
             chat_id = ch[5] if len(ch) > 5 else None
             if not chat_id:
                 continue
             
             is_member = False
+            member_status = None
             try:
                 member = await bot.get_chat_member(chat_id=chat_id, user_id=user_id)
-                if member.status in ["member", "administrator", "creator"]:
+                member_status = member.status
+                if member_status in ["member", "administrator", "creator"]:
                     is_member = True
-                    # FIX: Clean up join request if they're verified member to prevent bypass
+                    # Clean up join request if they are verified member
                     async with turso_connect() as db:
                         await db.execute("DELETE FROM channel_join_requests WHERE user_id=? AND channel_id=?", (user_id, chat_id))
                         await db.commit()
             except Exception as e:
                 logger.error(f"Private channel check error: {e}")
+            
+            # 🔴 FIX: Agar user ne channel LEAVE kar diya hai, toh purani request DELETE karo aur BLOCK karo.
+            if member_status in ["left", "kicked", "restricted"]:
+                async with turso_connect() as db:
+                    await db.execute("DELETE FROM channel_join_requests WHERE user_id=? AND channel_id=?", (user_id, chat_id))
+                    await db.commit()
+                return False
             
             if not is_member:
                 async with turso_connect() as db:
@@ -361,6 +371,7 @@ async def check_all_channels(bot, user_id: int) -> bool:
         except Exception as e:
             logger.error(f"Channel check error {ch[1]}: {e}")
             return False
+            
     return True
 
 async def chat_join_request_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -370,14 +381,19 @@ async def chat_join_request_handler(update: Update, context: ContextTypes.DEFAUL
     user_id = req.from_user.id
     channel_id = req.chat.id
     
+    # Auto approve the join request so they instantly become a member
+    try:
+        await context.bot.approve_chat_join_request(chat_id=channel_id, user_id=user_id)
+        logger.info(f"Auto-approved join request: user={user_id} channel={channel_id}")
+    except Exception as e:
+        logger.error(f"Failed to auto-approve join request: {e}")
+    
     async with turso_connect() as db:
         await db.execute(
             "INSERT OR REPLACE INTO channel_join_requests (user_id, channel_id, requested_at) VALUES (?, ?, ?)",
             (user_id, channel_id, datetime.utcnow().isoformat())
         )
         await db.commit()
-        
-    logger.info(f"Join request saved (Pending Approval): user={user_id} channel={channel_id}")
 
 
 async def send_join_message(update, user_id: int, bot=None):
@@ -581,24 +597,31 @@ async def check_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         ch_type = ch[4] if len(ch) > 4 else 'public'
         if ch_type == 'link_only':
             continue
+            
         if ch_type == 'private':
             chat_id = ch[5] if len(ch) > 5 else None
             if not chat_id:
                 continue
             
             is_member = False
+            member_status = None
             try:
                 member = await context.bot.get_chat_member(chat_id=chat_id, user_id=user.id)
-                if member.status in ["member", "administrator", "creator"]:
+                member_status = member.status
+                if member_status in ["member", "administrator", "creator"]:
                     is_member = True
-                    # FIX: Clean up join request if they're verified member
                     async with turso_connect() as db:
                         await db.execute("DELETE FROM channel_join_requests WHERE user_id=? AND channel_id=?", (user.id, chat_id))
                         await db.commit()
             except Exception as e:
                 logger.error(f"Private channel check error: {e}")
             
-            if not is_member:
+            # 🔴 FIX: Agar user ne channel leave kiya hai, toh history nuke karo and Block karo
+            if member_status in ["left", "kicked", "restricted"]:
+                async with turso_connect() as db:
+                    await db.execute("DELETE FROM channel_join_requests WHERE user_id=? AND channel_id=?", (user.id, chat_id))
+                    await db.commit()
+            elif not is_member:
                 async with turso_connect() as db:
                     row = await (await db.execute("SELECT 1 FROM channel_join_requests WHERE user_id=? AND channel_id=?", (user.id, chat_id))).fetchone()
                     if row:
@@ -665,7 +688,6 @@ async def check_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 async def web_app_data_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # FIX: NoneType Error Prevention
     if not update.message or not update.message.web_app_data:
         return
 
@@ -697,7 +719,6 @@ async def combined_message_handler(update: Update, context: ContextTypes.DEFAULT
     if update.effective_chat and update.effective_chat.type in ("group", "supergroup"):
         return
 
-    # FIX: Handling edited messages, stickers, and photos safely to prevent NoneType error
     message = update.message or update.edited_message
     if not message or not message.text:
         return
@@ -737,7 +758,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat and update.effective_chat.type in ("group", "supergroup"):
         return
 
-    # FIX: NoneType Error Prevention
     message = update.message or update.edited_message
     if not message or not message.text:
         return
@@ -2444,7 +2464,7 @@ async def verify_device(payload: VerifyRequest, request: Request):
     
     try:
         keyboard = await get_user_keyboard_async(user_id)
-        # BHEJ DIYA SIRF WELCOME MESSAGE! (Verification success wali line hata di gayi hai)
+        # BHEJ DIYA SIRF WELCOME MESSAGE!
         await bot_app_global.bot.send_message(
             chat_id=user_id,
             text=f"😍 Welcome, <b>{safe_first_name}</b>!\n\n💸 Earn Money • Refer Friends • Withdraw Instantly\n\n👇 Use button below to get started",
@@ -2484,7 +2504,7 @@ async def run_bot():
     bot_app.add_handler(ChatJoinRequestHandler(chat_join_request_handler))
     bot_app.add_handler(CallbackQueryHandler(callback_handler))
     bot_app.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, web_app_data_handler))
-    bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, combined_message_handler))
+    bot_app.add_handler(MessageHandler(filters.TEXT | filters.PHOTO | filters.VIDEO | filters.Document.ALL | filters.Sticker.ALL, combined_message_handler))
     await bot_app.initialize()
     await bot_app.start()
     await bot_app.bot.set_webhook(url=WEBHOOK_URL)
