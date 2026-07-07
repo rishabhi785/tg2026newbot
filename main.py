@@ -1615,10 +1615,31 @@ async def handle_refer_earn(update, user_id, context):
     if refer_earn_on != "1":
         await update.message.reply_text("🙅 Refer & Earn currently disabled try again later")
         return
+        
     async with turso_connect() as db:
         row = await (await db.execute("SELECT referral_count FROM user_balance WHERE user_id = ?", (user_id,))).fetchone()
     referral_count = row[0] if row else 0
+    
+    # Dynamically fetch values from admin panel
     refer_reward = await get_setting("refer_reward", "5")
+    daily_bonus = await get_setting("daily_bonus", "0")
+    min_withdrawal = await get_setting("min_withdrawal", "50")
+    
+    # Check which payment methods are active
+    ultra_on = await get_setting("ultra_pay_enabled", "0")
+    vsv_on = await get_setting("vsv_withdrawal_enabled", "1")
+    upi_on = await get_setting("upi_withdrawal_enabled", "1")
+    
+    payments_list = []
+    if ultra_on == "1":
+        payments_list.append("Ultra Pay")
+    if vsv_on == "1":
+        payments_list.append("VSV Wallet")
+    if upi_on == "1":
+        payments_list.append("UPI")
+        
+    payments_text = " / ".join(payments_list) if payments_list else "Admin Disabled"
+    
     bot_username = context.bot.username or "bot"
     referral_link = f"https://t.me/{bot_username}?start={user_id}"
 
@@ -1629,13 +1650,21 @@ async def handle_refer_earn(update, user_id, context):
         ],
     ]
 
+    msg = (
+        "★ Nᴇᴡ Aᴜᴛᴏ Pᴀʏᴍᴇɴᴛ  Bᴏᴛ 😍\n"
+        "&gt;--------------------------------------------&lt;\n\n"
+        f"Lɪɴᴋ :- {referral_link}\n\n"
+        f"⛦ Bᴏɴᴜꜱ : ₹{daily_bonus}\n"
+        f"⛦ Pᴇʀ Rᴇꜰᴇʀ : ₹{refer_reward}\n"
+        f"⛦ Mɪɴ Withdrawal: ₹{min_withdrawal}\n\n"
+        "100% Vᴇʀɪғɪᴇᴅ 💸\n\n"
+        f"✅ Pᴀʏᴍᴇɴᴛs Iɴ : {payments_text}"
+    )
+
     await update.message.reply_text(
-        f"🎁 Per Invite ₹{refer_reward} UPI Cash !!\n\n"
-        f"🎀 Invite Link : `{referral_link}`\n\n"
-        f"🎁 Daily bonus\n\n"
-        f"✅ Share Your Own Invite Link To Earn Unlimited Easy cash! 🤑",
+        msg,
         reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
 
 
