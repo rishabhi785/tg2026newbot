@@ -195,7 +195,6 @@ async def init_db():
                 mobile TEXT
             )
         """)
-        # Dynamic migration for Ultra Pay column
         try:
             await db.execute("ALTER TABLE user_balance ADD COLUMN ultra_wallet TEXT")
             await db.commit()
@@ -282,9 +281,9 @@ async def init_db():
             ("btn_bonus", "1"),
             ("btn_withdraw", "1"),
             ("btn_link_upi", "1"),
-            ("btn_link_wallet", "1"), # generic wallet button
+            ("btn_link_wallet", "1"), 
             ("btn_redeem", "1"),
-            ("ultra_pay_enabled", "0"), # Ultra Pay defaults
+            ("ultra_pay_enabled", "0"), 
             ("ultrapay_token", ""),
             ("ultrapay_key", ""),
         ]
@@ -338,6 +337,10 @@ async def check_all_channels(bot, user_id: int) -> bool:
                 member = await bot.get_chat_member(chat_id=chat_id, user_id=user_id)
                 if member.status in ["member", "administrator", "creator"]:
                     is_member = True
+                    # FIX: Clean up join request if they're verified member to prevent bypass
+                    async with turso_connect() as db:
+                        await db.execute("DELETE FROM channel_join_requests WHERE user_id=? AND channel_id=?", (user_id, chat_id))
+                        await db.commit()
             except Exception as e:
                 logger.error(f"Private channel check error: {e}")
             
@@ -588,6 +591,10 @@ async def check_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
                 member = await context.bot.get_chat_member(chat_id=chat_id, user_id=user.id)
                 if member.status in ["member", "administrator", "creator"]:
                     is_member = True
+                    # FIX: Clean up join request if they're verified member
+                    async with turso_connect() as db:
+                        await db.execute("DELETE FROM channel_join_requests WHERE user_id=? AND channel_id=?", (user.id, chat_id))
+                        await db.commit()
             except Exception as e:
                 logger.error(f"Private channel check error: {e}")
             
@@ -658,6 +665,10 @@ async def check_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 async def web_app_data_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # FIX: NoneType Error Prevention
+    if not update.message or not update.message.web_app_data:
+        return
+
     data = update.message.web_app_data.data
     user = update.effective_user
     context.user_data.clear()
@@ -686,7 +697,12 @@ async def combined_message_handler(update: Update, context: ContextTypes.DEFAULT
     if update.effective_chat and update.effective_chat.type in ("group", "supergroup"):
         return
 
-    text = update.message.text
+    # FIX: Handling edited messages, stickers, and photos safely to prevent NoneType error
+    message = update.message or update.edited_message
+    if not message or not message.text:
+        return
+
+    text = message.text
     user_id = update.effective_user.id
 
     admin_buttons = [
@@ -721,7 +737,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat and update.effective_chat.type in ("group", "supergroup"):
         return
 
-    text = update.message.text
+    # FIX: NoneType Error Prevention
+    message = update.message or update.edited_message
+    if not message or not message.text:
+        return
+
+    text = message.text
     user_id = update.effective_user.id
 
     if await is_admin(user_id) and context.user_data.get('admin_action'):
@@ -1657,14 +1678,15 @@ async def handle_refer_earn(update, user_id, context):
         f"⛦ Bᴏɴᴜꜱ : ₹{daily_bonus}\n"
         f"⛦ Pᴇʀ Rᴇꜰᴇʀ : ₹{refer_reward}\n"
         f"⛦ Mɪɴ Withdrawal: ₹{min_withdrawal}\n\n"
-        "100% Vᴇʀɪғɪᴇᴅ 💸\n\n"
+        "100% Vᴇʀɪғɪᴇᴅ 💸\n\n\n"
         f"✅ Pᴀʏᴍᴇɴᴛs Iɴ : {payments_text}"
     )
 
     await update.message.reply_text(
         msg,
         reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode="HTML"
+        parse_mode="HTML",
+        disable_web_page_preview=True
     )
 
 
